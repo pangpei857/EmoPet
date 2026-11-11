@@ -1,0 +1,23 @@
+[
+  {
+    "file": "face_landmarker.task",
+    "bytes": 3758596,
+    "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+    "source": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    "purpose": "MediaPipe CPU landmarks"
+  },
+  {
+    "file": "hand_landmarker.task",
+    "bytes": 7819105,
+    "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+    "source": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+    "purpose": "MediaPipe CPU landmarks"
+  },
+  {
+    "file": "phone_yolov8s.onnx",
+    "bytes": 44842404,
+    "sha256": "585ed38eed6e072973bd399b8330144816d354285f134b62d044c79f321f4c0d",
+    "source": "https://huggingface.co/Ultralytics/YOLOv8/resolve/main/yolov8s.pt",
+    "purpose": "COCO cell phone class 67, exported FP32 ONNX 640"
+  }
+]

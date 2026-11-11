@@ -1,0 +1,171 @@
+{
+  "captured_at": "2026-11-10T22:54:24.904186+08:00",
+  "note": "Sequential file capture from a workspace with another active development chat; not an atomic filesystem snapshot.",
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 78,
+      "sha256": "8ae4e3408d6987029a98d1af4fc197252145cf2fd959df6a920aef7b05d1d751"
+    },
+    {
+      "path": "assets/models/face_landmarker.task",
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+    },
+    {
+      "path": "assets/models/hand_landmarker.task",
+      "bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
+    },
+    {
+      "path": "assets/models/manifest.json",
+      "bytes": 653,
+      "sha256": "c0835015825f2d696cac043dce0389f32f85c6c038b8becac4abc8f272e629c2"
+    },
+    {
+      "path": "assets/pikachu.ico",
+      "bytes": 67646,
+      "sha256": "5578feafd437fbdf809fd85a372d0cc1bad3208fd9831b1d193235e9e8c6cf4d"
+    },
+    {
+      "path": "assets/raincoat-reference.png",
+      "bytes": 547553,
+      "sha256": "0a5070aa776fa1802b3d8f70198aed767083fcdaaa7e5e78db69d7dc6417f22e"
+    },
+    {
+      "path": "assets/visual-source.md",
+      "bytes": 1394,
+      "sha256": "66dd72533920e4bb80d6faf3cc1c261454025df025f513490e83728bfc382be0"
+    },
+    {
+      "path": "build.ps1",
+      "bytes": 457,
+      "sha256": "a95ac11b98d98b4e9d1c04b300f3b5fcabbfa8efbb1d6246aae31cc9a4a7872b"
+    },
+    {
+      "path": "main.py",
+      "bytes": 6589,
+      "sha256": "a28d262c00c33dc5f6e6ae6e401fe8f9a1e8b7a144eb886976cd449e7e8e9558"
+    },
+    {
+      "path": "Momo.spec",
+      "bytes": 1030,
+      "sha256": "93444f06c9cddc5bbe3fa68f7c506c69cd1e08320feb54a7c3be21f520c19337"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4515,
+      "sha256": "19712659ba9ad6d10584d5ed3bae39f4f323a3f0b77798cd636eff4cdccdfd02"
+    },
+    {
+      "path": "requirements-dev.txt",
+      "bytes": 41,
+      "sha256": "e89d5f8ac5417447a68d2b40a083530a47b55ee96ab6e903fe911b716e0eae3d"
+    },
+    {
+      "path": "requirements.txt",
+      "bytes": 28,
+      "sha256": "b646605337dd9fbf7ff0c2f362f4763845230a0132f0403192b42442799ecaf5"
+    },
+    {
+      "path": "study_pet/__init__.py",
+      "bytes": 29,
+      "sha256": "54bb3bd6380eff0df9f465709b111f50007cfba9fb2e6060d6827b64ed19e080"
+    },
+    {
+      "path": "study_pet/art.py",
+      "bytes": 6962,
+      "sha256": "147338de0795c10d81723299633cde6f613fd4c34dc7843cce3fe5218d47571f"
+    },
+    {
+      "path": "study_pet/camera.py",
+      "bytes": 5801,
+      "sha256": "8f6a0979a3981a68ca1af931cec231b6e498bf7a1617f0736c1738e1cd76f9b7"
+    },
+    {
+      "path": "study_pet/camera_ui.py",
+      "bytes": 14991,
+      "sha256": "2976f31c27d2e7c6f283aaa9095b8fd8f399e89caf1645368c689cca9b3c8e86"
+    },
+    {
+      "path": "study_pet/focus.py",
+      "bytes": 2443,
+      "sha256": "2eb6f3da6984eb5fb92d6fcbd29d9db5149e1733c2a4ed03452201a6aa5b8493"
+    },
+    {
+      "path": "study_pet/gaze.py",
+      "bytes": 692,
+      "sha256": "737962c283836732a8422c559307d7cbb5077b2f86663ab17e5be691e3e67722"
+    },
+    {
+      "path": "study_pet/perception.py",
+      "bytes": 5400,
+      "sha256": "e2a228279f4a2e2722c975993f29634ecfb28f2fb0bbafa2f7c11778fd3e228f"
+    },
+    {
+      "path": "study_pet/pikachu.py",
+      "bytes": 7401,
+      "sha256": "c0bc8c7ec2c8f47d81310d442c4e437449f093f345250b3f2c23c1542fd88a75"
+    },
+    {
+      "path": "study_pet/raincoat.py",
+      "bytes": 8512,
+      "sha256": "6c2cf445af4e2f467e0e12f42d5d9d473447c9c6e2562b3553961238167f52a9"
+    },
+    {
+      "path": "study_pet/storage.py",
+      "bytes": 1752,
+      "sha256": "8c3b00e42ddc0b410c0cc45565581bb7a49c5a4f1608740648552471ef2f9a71"
+    },
+    {
+      "path": "study_pet/ui.py",
+      "bytes": 31758,
+      "sha256": "14b7d68ba9ef1376e02ae4ea1ecf62012b7bf45c6bf699f999c6b7ebeb733d0e"
+    },
+    {
+      "path": "study_pet/vision.py",
+      "bytes": 5618,
+      "sha256": "cce4b9420bb817a11c42407c179a5f3123226438ce09994dc16aa9296faf471d"
+    },
+    {
+      "path": "study_pet/vision_worker.py",
+      "bytes": 3788,
+      "sha256": "da44fb19dd2aa8957951b77a3da1dadf16cb1f72876f0f5b5eca40b210478ce2"
+    },
+    {
+      "path": "tests/test_focus.py",
+      "bytes": 1869,
+      "sha256": "9d40e55fa682886cc34540580c9103526cf6769f249d28a237d390330b849a9a"
+    },
+    {
+      "path": "tests/test_gaze.py",
+      "bytes": 1307,
+      "sha256": "866c59b95d28ecdfc7a0840c2db613c661b9dbf13c3e41ee8986726745c55b1e"
+    },
+    {
+      "path": "tests/test_pet_ui.py",
+      "bytes": 14415,
+      "sha256": "afee9f7daae848c05b32bca48193b48d055d82b0d839a51712bdef9ad90a7872"
+    },
+    {
+      "path": "tools/prepare_vision_models.py",
+      "bytes": 2767,
+      "sha256": "b9096464fdef5dc0dc8e4ea8de3f1a3442381703511119ece0c548c32c2d4002"
+    },
+    {
+      "path": "tools/render_assets.py",
+      "bytes": 1306,
+      "sha256": "073db242b7e591487ff69d1419dc6da3163e6064ec208257d3e830cc0a4137ce"
+    },
+    {
+      "path": "启动桌宠.cmd",
+      "bytes": 369,
+      "sha256": "946aad183115aee68d466d6e28222c8b5fe5ccc2a0fa453238d50cd5d971a064"
+    },
+    {
+      "path": "课题计划书.md",
+      "bytes": 28909,
+      "sha256": "392594aa45f187d2299b3d8e0f8ea84281f64106010765b2ba1dd0ff3fe54b03"
+    }
+  ]
+}
