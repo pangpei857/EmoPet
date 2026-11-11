@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-11-11T20:50:45.119636+08:00",
+  "source_files_verified": 55,
+  "live_source_changes_since_snapshot": [],
+  "unit_tests": 76,
+  "checks": [
+    {
+      "label": "chat-smoke",
+      "command": [
+        "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+        "main.py",
+        "--chat-smoke-test",
+        "--preview-path",
+        "../verification/preview/chat.png"
+      ],
+      "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+      "offscreen": true,
+      "exit_code": 0,
+      "elapsed_seconds": 3.65
+    },
+    {
+      "label": "companion-smoke",
+      "command": [
+        "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+        "main.py",
+        "--companion-smoke-test",
+        "--preview-path",
+        "../verification/preview/companion.png"
+      ],
+      "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+      "offscreen": true,
+      "exit_code": 0,
+      "elapsed_seconds": 1.962
+    },
+    {
+      "label": "focus-smoke",
+      "command": [
+        "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+        "main.py",
+        "--smoke-test",
+        "--preview-path",
+        "../verification/preview/focus.png"
+      ],
+      "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+      "offscreen": true,
+      "exit_code": 0,
+      "elapsed_seconds": 2.189
+    },
+    {
+      "label": "unit",
+      "command": [
+        "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+      "offscreen": true,
+      "exit_code": 0,
+      "elapsed_seconds": 15.076
+    },
+    {
+      "label": "vision-smoke",
+      "command": [
+        "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+        "main.py",
+        "--vision-smoke-test",
+        "--vision-fixtures",
+        "C:/Users/20519/Desktop/多模态学习交互助手/.artifacts/vision-fixtures",
+        "--preview-path",
+        "../verification/preview/vision.png"
+      ],
+      "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+      "offscreen": true,
+      "exit_code": 0,
+      "elapsed_seconds": 12.132
+    }
+  ],
+  "real_camera_trial": false,
+  "real_deepseek_called": false,
+  "existing_release_matches_historical_validation_hash": true,
+  "notes": [
+    "Tests ran against source_snapshot with original project virtual environment.",
+    "vision-smoke uses public photos and local generated video, plus intentionally invalid device index 99.",
+    "chat-smoke uses loopback model fixture; no paid provider call.",
+    "No existing application profile, real API credentials or user database is included."
+  ]
+}

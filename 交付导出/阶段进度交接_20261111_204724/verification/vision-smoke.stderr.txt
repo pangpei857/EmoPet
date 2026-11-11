@@ -1,0 +1,22 @@
+WARNING: Logging before InitGoogle() is written to STDERR
+W0000 00:00:1794401271.315029    9836 face_landmarker_graph.cc:181] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1794401271.322588   38672 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401271.330530   35916 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401271.364489   27580 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401271.377683   27580 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401271.829925   32520 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+WARNING: Logging before InitGoogle() is written to STDERR
+W0000 00:00:1794401277.122920   20636 face_landmarker_graph.cc:181] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1794401277.129333   39552 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401277.137053   39312 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401277.164403   37472 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401277.171628   37472 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1794401277.340891    8252 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+[ WARN:0@0.053] global cap.cpp:477 cv::VideoCapture::open VIDEOIO(DSHOW): backend is generally available but can't be used to capture by index
+ERROR:root:Local vision worker failed
+Traceback (most recent call last):
+  File "C:\Users\20519\Desktop\多模态学习交互助手\交付导出\阶段进度交接_20261111_204724\source_snapshot\study_pet\vision_worker.py", line 36, in capture_loop
+    raise RuntimeError('无法打开视频文件。' if is_video else '无法打开摄像头。请确认设备已连接、没有被其他应用占用，并允许桌面应用使用摄像头。')
+RuntimeError: 无法打开摄像头。请确认设备已连接、没有被其他应用占用，并允许桌面应用使用摄像头。

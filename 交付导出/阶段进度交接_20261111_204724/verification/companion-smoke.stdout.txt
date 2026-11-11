@@ -1,0 +1,1 @@
+PASS: reminder buttons, sample isolation, pause exclusion, round completion, history persistence, exit finalization

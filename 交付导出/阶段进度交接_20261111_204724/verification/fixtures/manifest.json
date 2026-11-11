@@ -1,0 +1,38 @@
+[
+  {
+    "file": "000000000328.jpg",
+    "bytes": 66986,
+    "sha256": "8ba0ed80d34589221b1243e0764471d91716b3a267827cb37ecfc3cfae52cc90",
+    "source": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip"
+  },
+  {
+    "file": "000000000387.jpg",
+    "bytes": 53134,
+    "sha256": "079af237aafcdddfe5a528ef5e40f38ca449fce9ad5a49fbdaaeef068fac7c76",
+    "source": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip"
+  },
+  {
+    "file": "000000000395.jpg",
+    "bytes": 55487,
+    "sha256": "8d823d141724cc8656ccd48b49d6e44556ca399fbbd8458cc488f0d9816809a4",
+    "source": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip"
+  },
+  {
+    "file": "000000000536.jpg",
+    "bytes": 19624,
+    "sha256": "745e538b3979ffa93f63bb294163e173d9a99413bce6cf3289215b541c9f1eb1",
+    "source": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip"
+  },
+  {
+    "file": "000000000560.jpg",
+    "bytes": 42878,
+    "sha256": "96801af258ded041845af111c4535dcb12a512cf22f6fd9854e5723920532d60",
+    "source": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip"
+  },
+  {
+    "file": "portrait.jpg",
+    "bytes": 176561,
+    "sha256": "a6f11efaa834706db23f275b6115058fa87fc7f14362681e6abe14e82749de3e",
+    "source": "https://storage.googleapis.com/mediapipe-assets/portrait.jpg"
+  }
+]

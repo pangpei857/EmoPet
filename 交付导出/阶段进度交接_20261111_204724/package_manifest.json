@@ -1,0 +1,490 @@
+{
+  "note": "This manifest lists all delivered files except itself; generated Python bytecode is excluded.",
+  "files": [
+    {
+      "path": "environment_observed.json",
+      "bytes": 2770,
+      "sha256": "43e00c8bee32ba36f383d3e017bd35c949991fae39cf474b1b6e8975c8eca9b3"
+    },
+    {
+      "path": "repository_and_release.json",
+      "bytes": 2794,
+      "sha256": "00e07ffd7fa8bf92de1fd53c211b45699c302d34cab67c1be2071fed734eb5c8"
+    },
+    {
+      "path": "run_check.py",
+      "bytes": 1197,
+      "sha256": "07cdf6480dc1e0a798e3a99ae1ff9d3bad833a171625c00c88f695ba56a0d19f"
+    },
+    {
+      "path": "snapshot_manifest.json",
+      "bytes": 12323,
+      "sha256": "51462f48e5feefdba26e9001db2a57fdfe57242efed43aa579081992c1ec6598"
+    },
+    {
+      "path": "source_snapshot/.gitignore",
+      "bytes": 78,
+      "sha256": "8ae4e3408d6987029a98d1af4fc197252145cf2fd959df6a920aef7b05d1d751"
+    },
+    {
+      "path": "source_snapshot/assets/models/face_landmarker.task",
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+    },
+    {
+      "path": "source_snapshot/assets/models/hand_landmarker.task",
+      "bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
+    },
+    {
+      "path": "source_snapshot/assets/models/manifest.json",
+      "bytes": 957,
+      "sha256": "46a4604b1f8b3f594a447519725a3937a70544c7dba27402ae52234c1d646c09"
+    },
+    {
+      "path": "source_snapshot/assets/models/NOTICE.md",
+      "bytes": 1482,
+      "sha256": "e89a6ca6bf487dd2446ca388d6102d5d5256e378ce36d1f66f2a884a82f9a173"
+    },
+    {
+      "path": "source_snapshot/assets/models/phone_yolov8s.onnx",
+      "bytes": 44842404,
+      "sha256": "585ed38eed6e072973bd399b8330144816d354285f134b62d044c79f321f4c0d"
+    },
+    {
+      "path": "source_snapshot/assets/models/ULTRALYTICS-LICENSE.txt",
+      "bytes": 34523,
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    {
+      "path": "source_snapshot/assets/pikachu.ico",
+      "bytes": 67646,
+      "sha256": "5578feafd437fbdf809fd85a372d0cc1bad3208fd9831b1d193235e9e8c6cf4d"
+    },
+    {
+      "path": "source_snapshot/assets/raincoat-reference.png",
+      "bytes": 547553,
+      "sha256": "0a5070aa776fa1802b3d8f70198aed767083fcdaaa7e5e78db69d7dc6417f22e"
+    },
+    {
+      "path": "source_snapshot/assets/visual-source.md",
+      "bytes": 1394,
+      "sha256": "66dd72533920e4bb80d6faf3cc1c261454025df025f513490e83728bfc382be0"
+    },
+    {
+      "path": "source_snapshot/build.ps1",
+      "bytes": 457,
+      "sha256": "a95ac11b98d98b4e9d1c04b300f3b5fcabbfa8efbb1d6246aae31cc9a4a7872b"
+    },
+    {
+      "path": "source_snapshot/main.py",
+      "bytes": 8278,
+      "sha256": "84050c5589443e60c16788521d98135ed220d36d83f39e71b53107924d8e3520"
+    },
+    {
+      "path": "source_snapshot/Momo.spec",
+      "bytes": 2020,
+      "sha256": "31df1e8eb2e5dabfc9676c7fb822ad99ae123047ce1280457ffba1653ea17945"
+    },
+    {
+      "path": "source_snapshot/README.md",
+      "bytes": 12521,
+      "sha256": "13b30fb8b765e37580cb5b874e9332faae19aaab105003fa055e9ec7716da107"
+    },
+    {
+      "path": "source_snapshot/requirements-dev.txt",
+      "bytes": 41,
+      "sha256": "e89d5f8ac5417447a68d2b40a083530a47b55ee96ab6e903fe911b716e0eae3d"
+    },
+    {
+      "path": "source_snapshot/requirements.txt",
+      "bytes": 139,
+      "sha256": "0415b37a7bcaf16018def3f27fda4d3bf4666315446fb70ca753677f6e948b81"
+    },
+    {
+      "path": "source_snapshot/study_pet/__init__.py",
+      "bytes": 29,
+      "sha256": "54bb3bd6380eff0df9f465709b111f50007cfba9fb2e6060d6827b64ed19e080"
+    },
+    {
+      "path": "source_snapshot/study_pet/art.py",
+      "bytes": 6962,
+      "sha256": "147338de0795c10d81723299633cde6f613fd4c34dc7843cce3fe5218d47571f"
+    },
+    {
+      "path": "source_snapshot/study_pet/camera.py",
+      "bytes": 6195,
+      "sha256": "a5a2b737cce215fc1593d5092f480a66ef0694943bd3c8d47c09c255029cc659"
+    },
+    {
+      "path": "source_snapshot/study_pet/camera_ui.py",
+      "bytes": 19791,
+      "sha256": "a4ce021a2cfcad9110ac17d76364710c2ac89db40e0498f8432b0d04705500d2"
+    },
+    {
+      "path": "source_snapshot/study_pet/chat_core.py",
+      "bytes": 9123,
+      "sha256": "dfb8939ef65f750cc83c05d5a3b88eeef3af889830f3b9661eeb1bfb00b4e9ea"
+    },
+    {
+      "path": "source_snapshot/study_pet/chat_fixture.py",
+      "bytes": 3083,
+      "sha256": "3977b0ca27cf9f2addc19a1455346fa29e66771607a6e85626b4b22bbcffb6ce"
+    },
+    {
+      "path": "source_snapshot/study_pet/chat_network.py",
+      "bytes": 5060,
+      "sha256": "26545470a78e52b9dda7ae1d0d750b751b89135e180ec98f911ac51117563add"
+    },
+    {
+      "path": "source_snapshot/study_pet/chat_smoke.py",
+      "bytes": 4211,
+      "sha256": "2e2716e6319d6c48a25a374c6a4e5a2c1ebead517cf0c8220112dfff1b85019e"
+    },
+    {
+      "path": "source_snapshot/study_pet/chat_store.py",
+      "bytes": 4362,
+      "sha256": "a67ae17fd863aee4e496327dd0516f9df9124d956f903afa59e1dcf45ea157aa"
+    },
+    {
+      "path": "source_snapshot/study_pet/chat_ui.py",
+      "bytes": 24104,
+      "sha256": "d968136a425e898a3aaa17ba653b79d94fccec40be8543e41ff2f0c6a6a115e0"
+    },
+    {
+      "path": "source_snapshot/study_pet/companion_smoke.py",
+      "bytes": 3679,
+      "sha256": "25230e37b85e3b7cf4e32094148c9488aeb66b1b7db4b11b61511f492bd86383"
+    },
+    {
+      "path": "source_snapshot/study_pet/focus.py",
+      "bytes": 2776,
+      "sha256": "252788cd1c548d2956ca1db1e6a2bd281f0a6f7dcdda3305c3dfd6ff71d8964c"
+    },
+    {
+      "path": "source_snapshot/study_pet/gaze.py",
+      "bytes": 692,
+      "sha256": "737962c283836732a8422c559307d7cbb5077b2f86663ab17e5be691e3e67722"
+    },
+    {
+      "path": "source_snapshot/study_pet/history.py",
+      "bytes": 12879,
+      "sha256": "cf9a815d9368d6cb8884b54a321147ef07e5d661a78c0b1d96b7eb85831e4ca5"
+    },
+    {
+      "path": "source_snapshot/study_pet/history_ui.py",
+      "bytes": 10627,
+      "sha256": "b30ac77aeddd9af44fd2539c18018287e3235ac08b3593a3e6038d43d9179352"
+    },
+    {
+      "path": "source_snapshot/study_pet/perception.py",
+      "bytes": 6919,
+      "sha256": "cca2877714034a8d65faa29d10a9efc190046cb0d1c0d65d37fbbcaa519f4c4d"
+    },
+    {
+      "path": "source_snapshot/study_pet/pikachu.py",
+      "bytes": 7401,
+      "sha256": "c0bc8c7ec2c8f47d81310d442c4e437449f093f345250b3f2c23c1542fd88a75"
+    },
+    {
+      "path": "source_snapshot/study_pet/raincoat.py",
+      "bytes": 8512,
+      "sha256": "6c2cf445af4e2f467e0e12f42d5d9d473447c9c6e2562b3553961238167f52a9"
+    },
+    {
+      "path": "source_snapshot/study_pet/secrets.py",
+      "bytes": 2776,
+      "sha256": "fceb6e3f0e905fb1fefa0ae10501f279602d8fb45a5a9474a36f7ebea35969c0"
+    },
+    {
+      "path": "source_snapshot/study_pet/storage.py",
+      "bytes": 1607,
+      "sha256": "c4cd1b00179fd8f132f012104ff8bc77f7369f580519b311cbaed02347714bcf"
+    },
+    {
+      "path": "source_snapshot/study_pet/ui.py",
+      "bytes": 44952,
+      "sha256": "382ffc6f0914c58383647d24650c6caabd48263232ac075c0eaee6ddee28ffc2"
+    },
+    {
+      "path": "source_snapshot/study_pet/vision.py",
+      "bytes": 5618,
+      "sha256": "f52e5b6964e8bc1257e1e8dbbb115e2eaebf2a343b5d742ecfa81f8b1cb33e75"
+    },
+    {
+      "path": "source_snapshot/study_pet/vision_smoke.py",
+      "bytes": 3738,
+      "sha256": "cef50d043073eec1f18dbe0134c6e8faca3831ffeab8d9f10f4df8ed8723d84d"
+    },
+    {
+      "path": "source_snapshot/study_pet/vision_worker.py",
+      "bytes": 3788,
+      "sha256": "da44fb19dd2aa8957951b77a3da1dadf16cb1f72876f0f5b5eca40b210478ce2"
+    },
+    {
+      "path": "source_snapshot/tests/test_camera_ui.py",
+      "bytes": 7291,
+      "sha256": "4d760c24e4942a88b48d00af4d1560b36ebb764717d65ca8c2132b0c8c75149c"
+    },
+    {
+      "path": "source_snapshot/tests/test_chat.py",
+      "bytes": 11498,
+      "sha256": "dd6276f1ecfd569433b160474ce05973b062078f34ada5403eabc06226ec8498"
+    },
+    {
+      "path": "source_snapshot/tests/test_focus.py",
+      "bytes": 1869,
+      "sha256": "9d40e55fa682886cc34540580c9103526cf6769f249d28a237d390330b849a9a"
+    },
+    {
+      "path": "source_snapshot/tests/test_gaze.py",
+      "bytes": 1307,
+      "sha256": "866c59b95d28ecdfc7a0840c2db613c661b9dbf13c3e41ee8986726745c55b1e"
+    },
+    {
+      "path": "source_snapshot/tests/test_history.py",
+      "bytes": 5565,
+      "sha256": "a9bdb728837a7e21a97f63eaeb02b032b2a7b61b330e60a62e27100b6f986b6d"
+    },
+    {
+      "path": "source_snapshot/tests/test_perception.py",
+      "bytes": 4436,
+      "sha256": "be16d4c24aea6f0c82f438243653450b3ef815ec069c3804863df1714640420d"
+    },
+    {
+      "path": "source_snapshot/tests/test_pet_ui.py",
+      "bytes": 14415,
+      "sha256": "afee9f7daae848c05b32bca48193b48d055d82b0d839a51712bdef9ad90a7872"
+    },
+    {
+      "path": "source_snapshot/tests/test_reminder_feedback.py",
+      "bytes": 7750,
+      "sha256": "04468af0d7fdd79d6adaf61e635a76dee3958bd97651d4eb9c621a688f24e2ad"
+    },
+    {
+      "path": "source_snapshot/tests/test_vision_decoder.py",
+      "bytes": 1041,
+      "sha256": "43e88be30a54a429ca9e83644d4a85d60af5c0a11a5aade24469152860e2a046"
+    },
+    {
+      "path": "source_snapshot/tools/fetch_vision_fixtures.py",
+      "bytes": 1192,
+      "sha256": "faf794a5ef5cdf19610734b9334b862ec3a2cb549cfdb696437bac64a21386e5"
+    },
+    {
+      "path": "source_snapshot/tools/prepare_vision_models.py",
+      "bytes": 2779,
+      "sha256": "0da74e8701feb406db30934b39c85fc412095bfe0ff30a52454a3681b45c8de1"
+    },
+    {
+      "path": "source_snapshot/tools/render_assets.py",
+      "bytes": 1306,
+      "sha256": "073db242b7e591487ff69d1419dc6da3163e6064ec208257d3e830cc0a4137ce"
+    },
+    {
+      "path": "source_snapshot/启动桌宠.cmd",
+      "bytes": 369,
+      "sha256": "946aad183115aee68d466d6e28222c8b5fe5ccc2a0fa453238d50cd5d971a064"
+    },
+    {
+      "path": "source_snapshot/多模态学习陪伴助手课题计划书.docx",
+      "bytes": 54783,
+      "sha256": "8ddb86c08bf1be810ab5917a383c13003a846f2e94792f72e29bc5aeda78c887"
+    },
+    {
+      "path": "source_snapshot/课题计划书.md",
+      "bytes": 28909,
+      "sha256": "392594aa45f187d2299b3d8e0f8ea84281f64106010765b2ba1dd0ff3fe54b03"
+    },
+    {
+      "path": "verification/chat-smoke.result.json",
+      "bytes": 444,
+      "sha256": "a23f725f0f2547b65cd581d198b7dcc4ac805c049b5ee9a2ed76f275f6938260"
+    },
+    {
+      "path": "verification/chat-smoke.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification/chat-smoke.stdout.txt",
+      "bytes": 119,
+      "sha256": "7274ae4c6ae0802ce63129ae6abab7c354d52c63307e1a6148e1cf3166125805"
+    },
+    {
+      "path": "verification/companion-smoke.result.json",
+      "bytes": 460,
+      "sha256": "235096ac3440a1c9645c2f744ae1e11dfe989b2297cffe75cf02853a109b7ac6"
+    },
+    {
+      "path": "verification/companion-smoke.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification/companion-smoke.stdout.txt",
+      "bytes": 117,
+      "sha256": "c6fd6942776396ae688b3a53ae12d75b145264a6ddbfd5e0b1e782dda1aebd08"
+    },
+    {
+      "path": "verification/fixtures/000000000328.jpg",
+      "bytes": 66986,
+      "sha256": "8ba0ed80d34589221b1243e0764471d91716b3a267827cb37ecfc3cfae52cc90"
+    },
+    {
+      "path": "verification/fixtures/000000000387.jpg",
+      "bytes": 53134,
+      "sha256": "079af237aafcdddfe5a528ef5e40f38ca449fce9ad5a49fbdaaeef068fac7c76"
+    },
+    {
+      "path": "verification/fixtures/000000000395.jpg",
+      "bytes": 55487,
+      "sha256": "8d823d141724cc8656ccd48b49d6e44556ca399fbbd8458cc488f0d9816809a4"
+    },
+    {
+      "path": "verification/fixtures/000000000536.jpg",
+      "bytes": 19624,
+      "sha256": "745e538b3979ffa93f63bb294163e173d9a99413bce6cf3289215b541c9f1eb1"
+    },
+    {
+      "path": "verification/fixtures/000000000560.jpg",
+      "bytes": 42878,
+      "sha256": "96801af258ded041845af111c4535dcb12a512cf22f6fd9854e5723920532d60"
+    },
+    {
+      "path": "verification/fixtures/manifest.json",
+      "bytes": 1426,
+      "sha256": "3bcafba3c4337c9b77f43588a56191b4b516a37408ece8c71d631b4211119ffa"
+    },
+    {
+      "path": "verification/fixtures/portrait.jpg",
+      "bytes": 176561,
+      "sha256": "a6f11efaa834706db23f275b6115058fa87fc7f14362681e6abe14e82749de3e"
+    },
+    {
+      "path": "verification/focus-smoke.result.json",
+      "bytes": 442,
+      "sha256": "8c4dd81f497a1785651f0c06caff8bdc9c3805fa717ed9451ff62bbdd65d5a9f"
+    },
+    {
+      "path": "verification/focus-smoke.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification/focus-smoke.stdout.txt",
+      "bytes": 97,
+      "sha256": "c05e7eb7f7b80182316287b24594f4d53776695ac4675e892aa3303876ce9dc5"
+    },
+    {
+      "path": "verification/historical/chat-release-validation.json",
+      "bytes": 565,
+      "sha256": "1be04c7605bf4cc65f374ee67fa0e3effa563582018d1e98c3eadaa31b7db8be"
+    },
+    {
+      "path": "verification/historical/history-release-validation.json",
+      "bytes": 460,
+      "sha256": "79ccc824087c54b21da59d69a37c2a4b48f96a8a46bf063e06c77cf9e766e066"
+    },
+    {
+      "path": "verification/historical/packaged-chat-records.json",
+      "bytes": 192,
+      "sha256": "3155c6ca1f940bbe9c0057e185bb1f4176d207b4e831ba0c9e0ed88db6b1beb7"
+    },
+    {
+      "path": "verification/historical/packaged-deepseek-chat.json",
+      "bytes": 266,
+      "sha256": "b1e0b9fa8350e7bc434e3b8eb6690515f302346d00ac95426c8cfe5a05686a77"
+    },
+    {
+      "path": "verification/preview/chat-config.png",
+      "bytes": 7754,
+      "sha256": "267fe013805456f6b69bc9f2f2d148d0e418058bd14ac4db3d80d9bc8b47feb4"
+    },
+    {
+      "path": "verification/preview/chat-steps.png",
+      "bytes": 7662,
+      "sha256": "a35f86529d84aa2f2f25ebb366b35769d8befadcbcdfd15114457beb0f96b710"
+    },
+    {
+      "path": "verification/preview/chat.json",
+      "bytes": 266,
+      "sha256": "b1e0b9fa8350e7bc434e3b8eb6690515f302346d00ac95426c8cfe5a05686a77"
+    },
+    {
+      "path": "verification/preview/chat.png",
+      "bytes": 81528,
+      "sha256": "ca74693c4d64463b71e5e136dfa2d706e56dff93eb5725bc54c71ea920e2aaa6"
+    },
+    {
+      "path": "verification/preview/companion-feedback.png",
+      "bytes": 7983,
+      "sha256": "e0eeb119b9d942d6c3aacfe745da8bea2d054750f59ebc97a4770ac80dfb1d90"
+    },
+    {
+      "path": "verification/preview/companion.json",
+      "bytes": 192,
+      "sha256": "3155c6ca1f940bbe9c0057e185bb1f4176d207b4e831ba0c9e0ed88db6b1beb7"
+    },
+    {
+      "path": "verification/preview/companion.png",
+      "bytes": 80832,
+      "sha256": "a86218b0def5e72b5779e0110a7e94d3ccacd4e07a0518c263959d40f6ed2e55"
+    },
+    {
+      "path": "verification/preview/focus.png",
+      "bytes": 87759,
+      "sha256": "d8aeb6a88a9f531f1ce48774f3f43737207a27293fdcc34fcb40b86773ac6a0d"
+    },
+    {
+      "path": "verification/preview/vision.png",
+      "bytes": 236019,
+      "sha256": "07fd74e5cff5a6477d5d3293d187fd16c27812d449cbbc433ce8e69fab106d26"
+    },
+    {
+      "path": "verification/summary.json",
+      "bytes": 3319,
+      "sha256": "ac07907b3803368502c805a7850ee6874631bd1c644df34cc8910bfb360404d4"
+    },
+    {
+      "path": "verification/unit.result.json",
+      "bytes": 415,
+      "sha256": "230ff970872f2e24feef97aa2974bc05cb314a2ea3a111633bc2f1e348ce49fe"
+    },
+    {
+      "path": "verification/unit.stderr.txt",
+      "bytes": 10790,
+      "sha256": "78c39df407399cd523de0a044a30b7039e2686c761e1981efa6956d76965b046"
+    },
+    {
+      "path": "verification/unit.stdout.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification/vision-smoke.result.json",
+      "bytes": 564,
+      "sha256": "83ee0134f6f68b33ed953ad63463c3bbcec308af3f66aaa5e815bb536564a400"
+    },
+    {
+      "path": "verification/vision-smoke.stderr.txt",
+      "bytes": 3100,
+      "sha256": "7451a882f4714f4d90a0a057c182250e398226c29cac70adac9ded80154313b8"
+    },
+    {
+      "path": "verification/vision-smoke.stdout.txt",
+      "bytes": 627,
+      "sha256": "7d2d9954e08eab6d3a6e38250e3ee070cf4baebc23a30508ed97b53a03e12a26"
+    },
+    {
+      "path": "给接手Agent的启动指令.md",
+      "bytes": 2339,
+      "sha256": "969aacca4cd2bc5f5f856f39271eaff1bbdb491a1264be62d7ee99683758be6c"
+    },
+    {
+      "path": "项目进度与Agent交接报告.md",
+      "bytes": 21424,
+      "sha256": "8138220787c99ac4353778baa78df009fbe844ca80a4591788ab31891408552f"
+    }
+  ]
+}

@@ -10,11 +10,12 @@ from PySide6.QtWidgets import QApplication
 
 from study_pet.camera_ui import CameraPanel
 from study_pet.perception import Box,Observation,VisionSettings
-from study_pet.ui import Companion
+from study_pet.ui import Companion,STYLE
 from study_pet.storage import Store
 
 APP=QApplication.instance() or QApplication([])
 APP.setQuitOnLastWindowClosed(False)
+APP.setStyleSheet(STYLE)
 
 
 class FakeController(QObject):
@@ -84,6 +85,24 @@ class CameraUiTests(unittest.TestCase):
         self.assertIsNone(self.panel.calibration)
         self.assertAlmostEqual(self.saved[-1]['baseline'],.2)
         self.assertEqual(self.events,[])
+
+    def test_small_panel_keeps_values_readable_and_plus_minus_work(self):
+        self.panel.resize(860,620);APP.processEvents()
+        for control,step in ((self.panel.phone_duration,1),(self.panel.care_duration,1),
+                             (self.panel.cooldown,1),(self.panel.brow,.05)):
+            self.panel.settings_scroll.ensureWidgetVisible(control);APP.processEvents()
+            editor=control.lineEdit()
+            self.assertGreaterEqual(editor.height(),editor.fontMetrics().height()+4)
+            self.assertGreaterEqual(editor.width(),editor.fontMetrics().horizontalAdvance(control.text())+8)
+            self.assertEqual(control.plus_button.text(),'+');self.assertEqual(control.minus_button.text(),'−')
+            original=control.value()
+            QTest.mouseClick(control.plus_button,Qt.MouseButton.LeftButton)
+            self.assertAlmostEqual(control.value(),original+step)
+            QTest.mouseClick(control.minus_button,Qt.MouseButton.LeftButton)
+            self.assertAlmostEqual(control.value(),original)
+            control.setValue(control.maximum());self.assertFalse(control.plus_button.isEnabled())
+            control.setValue(control.minimum());self.assertFalse(control.minus_button.isEnabled())
+        self.assertTrue(self.panel.settings_scroll.verticalScrollBar().isVisible())
 
 
 class CompanionVisionTests(unittest.TestCase):

@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "rounds": 2,
+  "study_seconds": 90,
+  "completed": 1,
+  "real_reminders": 2,
+  "corrections": 1,
+  "example_feedback_separate": true,
+  "camera_started": false
+}

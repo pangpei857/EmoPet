@@ -1,0 +1,14 @@
+{
+  "label": "companion-smoke",
+  "command": [
+    "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+    "main.py",
+    "--companion-smoke-test",
+    "--preview-path",
+    "../verification/preview/companion.png"
+  ],
+  "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+  "offscreen": true,
+  "exit_code": 0,
+  "elapsed_seconds": 1.962
+}

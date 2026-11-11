@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 import math
 import statistics
+import time
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,33 @@ class FeedbackEvent:
     mood: str
 
 
+class ReminderGate:
+    """Temporary user choices; monotonic deadlines do not change saved settings."""
+    def __init__(self,clock=time.monotonic):
+        self.clock=clock;self.snooze_until=0.;self.phone_until=0.;self.care_until=0.
+
+    @property
+    def snoozed(self):return self.clock()<self.snooze_until
+    @property
+    def phone_paused(self):return self.clock()<self.phone_until
+    @property
+    def care_paused(self):return self.clock()<self.care_until
+
+    def apply(self,response,kind):
+        now=self.clock()
+        if response=='research' and kind=='phone':self.phone_until=max(self.phone_until,now+300)
+        elif response=='snooze':self.snooze_until=max(self.snooze_until,now+600)
+        elif response=='false_positive':
+            name='phone_until' if kind=='phone' else 'care_until'
+            setattr(self,name,max(getattr(self,name),now+60))
+
+    def toggle_snooze(self):self.snooze_until=0. if self.snoozed else self.clock()+600
+
+    def reset_round(self):
+        # 'Looking something up' belongs to the current learning round.
+        self.phone_until=0.;self.care_until=0.
+
+
 @dataclass
 class _Evidence:
     duration: float = 0.
@@ -104,7 +132,7 @@ class ReminderPolicy:
     def reset_evidence(self):
         self._last=None;self._phone=_Evidence();self._care=_Evidence()
 
-    def update(self,observation,*,focus_active,pet_visible=True,snoozed=False):
+    def update(self,observation,*,focus_active,pet_visible=True,snoozed=False,phone_paused=False,care_paused=False):
         now=observation.timestamp
         previous=self._last
         # No evidence may bridge paused capture, long inference gaps or clocks
@@ -119,10 +147,12 @@ class ReminderPolicy:
         single_face=len(observation.faces)==1
         if not single_face:
             self.reset_evidence();self._last=now;return None
-        phone=s.phone_enabled and single_face and observation.phone_near_hand
+        phone=s.phone_enabled and not phone_paused and single_face and observation.phone_near_hand
         threshold=s.brow_threshold
         if s.baseline is not None:threshold=max(threshold,min(.95,s.baseline+.18))
-        care=s.care_enabled and single_face and observation.brow_score>=threshold
+        care=s.care_enabled and not care_paused and single_face and observation.brow_score>=threshold
+        if phone_paused:self._phone=_Evidence()
+        if care_paused:self._care=_Evidence()
         self._phone.update(phone,now,dt);self._care.update(care,now,dt)
         if now-self._last_reminder<s.cooldown_seconds:return None
         event=None

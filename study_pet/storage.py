@@ -1,10 +1,10 @@
 """Small local settings store. Raw media and sensor data are never collected here."""
 
-from datetime import date
 import json
 import logging
 import os
 from pathlib import Path
+from .history import HistoryStore, local_day
 
 
 class Store:
@@ -17,6 +17,8 @@ class Store:
                 self.data = value
         except (OSError, ValueError):
             pass
+        self.history=HistoryStore(directory,self.data.get('daily'))
+        self._today_cache=None
 
     def get(self, key, default=None):
         return self.data.get(key, default)
@@ -32,18 +34,12 @@ class Store:
             logging.exception("Could not save settings")
 
     def today(self):
-        stats = self.get("daily", {})
-        if not isinstance(stats, dict) or stats.get("date") != date.today().isoformat():
-            return {"date": date.today().isoformat(), "seconds": 0, "completed": 0}
-        try:
-            return {"date": stats["date"], "seconds": max(0, int(stats.get("seconds", 0))),
-                    "completed": max(0, int(stats.get("completed", 0)))}
-        except (ValueError, TypeError):
-            return {"date": date.today().isoformat(), "seconds": 0, "completed": 0}
+        day=local_day(self.history.clock());key=(day,self.history.revision)
+        if self._today_cache is None or self._today_cache[0]!=key:
+            summary=self.history.summary(day,day)
+            self._today_cache=(key,{'date':day,'seconds':summary['seconds'],'completed':summary['completed']})
+        return dict(self._today_cache[1])
 
     def record(self, seconds: float, completed: bool):
-        stats = self.today()
-        stats["seconds"] += max(0, int(seconds))
-        stats["completed"] += int(completed)
-        self.save(daily=stats)
+        self.history.add_legacy_credit(seconds,completed)
 

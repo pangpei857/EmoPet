@@ -30,7 +30,23 @@
 | 提醒 | 轻跳、耳朵摆动、小闹钟 | “提醒我”、学习／休息计时结束 |
 | 鼓励 | 闭眼、跳跃、旋转星星 | “为我加油”、开始学习或继续 |
 
-动作会自动回到当前学习或休息状态，休息时闭眼安静陪伴。原始贴图位于 `assets/raincoat-reference.png`，保持原文件不变，由程序在显示时裁掉原图中的棋盘格与枫叶，并为耳朵、尾巴和眼睛添加动画。本版使用预设鼓励语，已接入本地视觉检测，尚未接入声音交互或AI聊天。
+动作会自动回到当前学习或休息状态，休息时闭眼安静陪伴。原始贴图位于 `assets/raincoat-reference.png`，保持原文件不变，由程序在显示时裁掉原图中的棋盘格与枫叶，并为耳朵、尾巴和眼睛添加动画。日常动作使用预设鼓励语；已接入本地视觉检测与DeepSeek文字对话，尚未接入声音交互。
+
+## DeepSeek学习对话与任务拆解
+
+1. 右键桌宠选择 **和皮卡丘聊聊 · DeepSeek**，或点击学习面板的 **学习对话**。
+2. 打开 **模型配置**，默认服务地址为 `https://api.deepseek.com`，默认模型为 `deepseek-flash`，也可选择 `deepseek-v4-pro`。这两个名称按2026年11月11日[DeepSeek官方文档](https://api-docs.deepseek.com/)核对；模型名称可手动修改。
+3. 在应用里填写你自己的DeepSeek API Key，点 **保存并测试连接**。测试仅发送一条短消息，不带学习任务和历史；调用由DeepSeek按其[服务规则](https://api-docs.deepseek.com/quick_start/pricing/)计费。
+4. 返回 **学习对话** 输入问题，点击发送或按 **Ctrl+Enter**；Enter换行。支持逐步显示回答、停止生成、新建对话和查看本地历史。
+5. 默认勾选 **附带当前学习任务和计时状态**，发送时会附带当前任务、计时状态、计划时长与剩余时间；取消勾选后只发送对话文字。摄像头画面、面部关键点与学习记录不会自动发送给模型。
+6. 选择 **拆解任务**，或点击 **拆分当前任务** 填入提示，再发送目标。返回的步骤可在 **学习步骤** 中修改名称和分钟数，点 **保存步骤修改** 保留。
+7. 选中一步，点 **放到学习面板**。应用只填入任务和时长，由你点击“开始专注”；当前一轮未完成／结束时不会覆盖任务。
+
+完整回答在聊天面板显示，桌宠气泡显示简短回应。默认关闭深度思考，可以在配置中启用。网络请求异步运行；停止或关闭聊天窗口会断开本地请求并保存收到的部分，已产生的用量仍按平台规则计算。断线、超时、密钥错误、余额不足与限流都有提示，不自动重复发送收费请求。
+
+设置保存在 `settings.json`；API Key由Windows DPAPI加密保存在 `deepseek.key`，与服务地址绑定，不写入普通设置、聊天记录或日志。换电脑请重新填写密钥。对话和修改后的步骤保存在同目录的 `chat_history.sqlite3`，重启后保留。
+
+开发自测使用本地模拟接口，不使用真实API Key，也不代表已完成真实DeepSeek账户验证；实际连接需在应用里填写自己的密钥。接口格式参考[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)和[思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
 ## 视觉陪伴
 
@@ -48,6 +64,26 @@
 
 手机与手部的空间关系只是“疑似使用”的线索；眉部系数也不能判断人的真实情绪。请保持单人、光线足够，面部、手部和手机尽量进入画面。遮挡、侧脸、远处小手机可能漏检，需要结合实际桌面场景调整。
 
+## 回应提醒与学习记录
+
+视觉提醒的气泡提供直接回应：
+
+- **我在查资料**：本轮暂停手机提醒5分钟，保留眉部关怀；提前结束本轮或开始新一轮会恢复手机提醒。
+- **这次识别错了**：保存你的误报标记，1分钟内不重复这类提醒。不会直接修改模型或检测阈值。
+- **稍后提醒**：暂停全部视觉提醒10分钟，可在视觉陪伴窗口提前恢复。
+
+右键桌宠选择 **发送示例提醒**，或进入 **学习记录 → 发送示例提醒**，即可在没有摄像头、没有开始计时的情况下体验。示例有明确标记，不会启动摄像头、改变真实提醒的暂停状态或计入真实提醒数量。关闭气泡提示后，仍可在记录页回应示例。
+
+学习面板和右键／托盘菜单均提供 **学习记录** 入口：
+
+- **每轮学习**：任务、开始／结束时间、计划时长、实际投入、暂停次数、完成状态与相关提醒。
+- **提醒与反馈**：提醒来源、关联任务和你的回应；气泡收起后可补标误报。旧轮次的反馈不会暂停新一轮的提醒。
+- 支持今天、近7天、全部记录；汇总中的提醒次数仅表示触发次数，不代表不专注次数。
+- 暂停时长不计入实际投入；休息单独保存，不增加学习时长和完成学习轮数。跨午夜的学习时间按日期拆分。
+- 开始、暂停、继续、结束和退出时保存记录；进行中约每10秒自动保存。异常退出后，保留到最近一次自动保存并标记“意外中断”。
+
+记录保存为本地应用数据目录中的 `study_history.sqlite3`，设置仍保存在 `settings.json`。只记录任务、时间、提醒类型和用户回应，不保存摄像头画面、面部关键点或音频。升级时一次性保留旧版已有的当日汇总；旧版没有的逐轮明细不会补造。
+
 ## 开发运行
 
 使用64位Python 3.12创建环境，安装依赖：
@@ -64,6 +100,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe main.py --smoke-test --preview-path .artifacts/mvp-preview.png
 .\.venv\Scripts\python.exe main.py --vision-smoke-test --preview-path .artifacts/vision-preview.png
+.\.venv\Scripts\python.exe main.py --companion-smoke-test --preview-path .artifacts/learning-history-preview.png
+.\.venv\Scripts\python.exe main.py --chat-smoke-test --preview-path .artifacts/deepseek-chat-preview.png
 .\.venv\Scripts\python.exe tools/render_assets.py
 .\.venv\Scripts\python.exe main.py --profile-dir .artifacts/desktop-qa-profile
 powershell -ExecutionPolicy Bypass -File .\build.ps1
@@ -84,6 +122,13 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 - `study_pet/vision_worker.py`：摄像头／本地视频采集与有界画面队列。
 - `study_pet/vision.py`：YOLOv8s ONNX手机检测、MediaPipe面部与手部特征。
 - `study_pet/perception.py`：不依赖图像的观察数据、持续证据、冷却和关怀规则。
+- `study_pet/history.py`：SQLite学习轮次、提醒回应、旧版汇总迁移与日期统计。
+- `study_pet/history_ui.py`：学习记录、提醒列表和反馈入口。
+- `study_pet/chat_core.py`：DeepSeek请求参数、有限对话上下文、流式解析和步骤校验。
+- `study_pet/chat_network.py`：异步HTTPS请求、停止、超时与错误处理。
+- `study_pet/chat_ui.py`：聊天、模型配置与可编辑的学习步骤。
+- `study_pet/chat_store.py`：本地对话与计划存储。
+- `study_pet/secrets.py`：Windows本机加密密钥存储。
 
 模型来源、哈希与上游许可说明位于 `assets/models/NOTICE.md` 和 `manifest.json`。开发时重新导出模型使用独立环境安装 `torch==2.6.0`（CPU）、`torchvision==0.21.0`、`ultralytics==8.3.162`、`onnx==1.17.0`，再运行 `tools/prepare_vision_models.py --export-phone`；这些导出工具不随运行版打包。
 

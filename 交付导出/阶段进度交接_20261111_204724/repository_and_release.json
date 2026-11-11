@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-11-11T20:47:24.331899+08:00",
+  "head": {
+    "exit_code": 0,
+    "output": "fe8db592d188254fb4194dbcb7e57ab00212adf9\n",
+    "stderr": ""
+  },
+  "recent_commits": {
+    "exit_code": 0,
+    "output": "fe8db59 2026-11-11T12:23:38+08:00 Initial commit\n",
+    "stderr": ""
+  },
+  "status": {
+    "exit_code": 0,
+    "output": " M README.md\n M main.py\n M study_pet/camera_ui.py\n M study_pet/focus.py\n M study_pet/perception.py\n M study_pet/storage.py\n M study_pet/ui.py\n M tests/test_camera_ui.py\n?? study_pet/chat_core.py\n?? study_pet/chat_fixture.py\n?? study_pet/chat_network.py\n?? study_pet/chat_smoke.py\n?? study_pet/chat_store.py\n?? study_pet/chat_ui.py\n?? study_pet/companion_smoke.py\n?? study_pet/history.py\n?? study_pet/history_ui.py\n?? study_pet/secrets.py\n?? tests/test_chat.py\n?? tests/test_history.py\n?? tests/test_reminder_feedback.py\n?? \"\\344\\272\\244\\344\\273\\230\\345\\257\\274\\345\\207\\272/\\351\\230\\266\\346\\256\\265\\350\\277\\233\\345\\272\\246\\344\\272\\244\\346\\216\\245_20261111_204724/\"\n",
+    "stderr": ""
+  },
+  "tracked_diff_summary": {
+    "exit_code": 0,
+    "output": " README.md               |  47 ++++++++++-\n main.py                 |  24 +++++-\n study_pet/camera_ui.py  | 114 ++++++++++++++++++++++-----\n study_pet/focus.py      |   8 +-\n study_pet/perception.py |  36 ++++++++-\n study_pet/storage.py    |  22 +++---\n study_pet/ui.py         | 205 ++++++++++++++++++++++++++++++++++++++++++++----\n tests/test_camera_ui.py |  21 ++++-\n 8 files changed, 418 insertions(+), 59 deletions(-)\n",
+    "stderr": "warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'main.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'study_pet/camera_ui.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'study_pet/focus.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'study_pet/perception.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'study_pet/storage.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'study_pet/ui.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_camera_ui.py', LF will be replaced by CRLF the next time Git touches it\n"
+  },
+  "release": {
+    "path": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\dist\\Momo\\Momo.exe",
+    "bytes": 9350118,
+    "mtime": "2026-11-11T20:37:54.360842+08:00",
+    "sha256": "40d8b50458d16d57fff3608ba01268cfbfc34884ff167d83305472f74af270db"
+  }
+}

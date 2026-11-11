@@ -4,6 +4,8 @@ from enum import Enum
 import math
 import time
 from collections.abc import Callable
+from uuid import uuid4
+from .history import utc_now
 
 
 class Status(str, Enum):
@@ -14,8 +16,9 @@ class Status(str, Enum):
 
 
 class FocusSession:
-    def __init__(self, clock: Callable[[], float] = time.monotonic):
+    def __init__(self, clock: Callable[[], float] = time.monotonic, wall_clock=utc_now):
         self.clock = clock
+        self.wall_clock=wall_clock;self.round_id=None;self.started_at=None;self.pause_count=0
         self.status = Status.IDLE
         self.task = ""
         self.kind = "focus"
@@ -50,6 +53,7 @@ class FocusSession:
         self._remaining = float(self.duration)
         self.task = task.strip() or ("专心做一件事" if kind == "focus" else "休息一下")
         self.kind = kind
+        self.round_id=uuid4().hex;self.started_at=self.wall_clock();self.pause_count=0
         self._deadline = self.clock() + self._remaining
         self.status = Status.RUNNING
 
@@ -59,6 +63,7 @@ class FocusSession:
                 return
             self._remaining = self.remaining
             self.status = Status.PAUSED
+            self.pause_count+=1
 
     def resume(self) -> None:
         if self.status == Status.PAUSED:
@@ -76,4 +81,5 @@ class FocusSession:
     def reset(self) -> None:
         self.status = Status.IDLE
         self._remaining = float(self.duration)
+        self.round_id=None;self.started_at=None
 

@@ -1,0 +1,16 @@
+{
+  "label": "vision-smoke",
+  "command": [
+    "C:/Users/20519/Desktop/多模态学习交互助手/.venv/Scripts/python.exe",
+    "main.py",
+    "--vision-smoke-test",
+    "--vision-fixtures",
+    "C:/Users/20519/Desktop/多模态学习交互助手/.artifacts/vision-fixtures",
+    "--preview-path",
+    "../verification/preview/vision.png"
+  ],
+  "cwd": "C:\\Users\\20519\\Desktop\\多模态学习交互助手\\交付导出\\阶段进度交接_20261111_204724\\source_snapshot",
+  "offscreen": true,
+  "exit_code": 0,
+  "elapsed_seconds": 12.132
+}

@@ -1,0 +1,24 @@
+{
+  "sha256": "40d8b50458d16d57fff3608ba01268cfbfc34884ff167d83305472f74af270db",
+  "unit_tests": 76,
+  "checks": [
+    {
+      "check": "--chat-smoke-test",
+      "exit": 0
+    },
+    {
+      "check": "--companion-smoke-test",
+      "exit": 0
+    }
+  ],
+  "chat": {
+    "passed": true,
+    "transport": "local DeepSeek-compatible fixture",
+    "streaming": true,
+    "stop_preserves_partial": true,
+    "plan_edit_and_handoff": true,
+    "credentials_encrypted": true,
+    "https_backend": true,
+    "real_deepseek_model_called": false
+  }
+}

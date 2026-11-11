@@ -66,6 +66,9 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--smoke-test",action="store_true")
     parser.add_argument('--vision-smoke-test',action='store_true')
+    parser.add_argument('--companion-smoke-test',action='store_true')
+    parser.add_argument('--chat-smoke-test',action='store_true')
+    parser.add_argument('--open-chat',action='store_true',help='Open the DeepSeek chat panel')
     parser.add_argument('--vision-fixtures',type=Path)
     parser.add_argument("--preview-path",type=Path)
     parser.add_argument("--quit",action="store_true",help="Gracefully close the running companion")
@@ -78,7 +81,7 @@ def main():
     app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(app_font)
     app.setWindowIcon(pet_icon())
-    testing=args.smoke_test or args.vision_smoke_test
+    testing=args.smoke_test or args.vision_smoke_test or args.companion_smoke_test or args.chat_smoke_test
     temporary=tempfile.TemporaryDirectory(prefix="momo-smoke-") if testing else None
     directory=Path(temporary.name) if temporary else (args.profile_dir.resolve() if args.profile_dir else Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)))
     directory.mkdir(parents=True,exist_ok=True)
@@ -89,7 +92,7 @@ def main():
         server_name="MomoStudyPet-"+str(directory).replace("\\","-").replace(":","")
         socket=QLocalSocket();socket.connectToServer(server_name)
         if socket.waitForConnected(500):
-            socket.write(b"quit" if args.quit else b"show");socket.waitForBytesWritten(500);socket.disconnectFromServer()
+            socket.write(b"quit" if args.quit else b"chat" if args.open_chat else b"show");socket.waitForBytesWritten(500);socket.disconnectFromServer()
             return 0
         if args.quit:return 0
         server=QLocalServer()
@@ -97,6 +100,7 @@ def main():
             QLocalServer.removeServer(server_name)
             if not server.listen(server_name):raise RuntimeError("Unable to create the local app instance")
     companion=Companion(Store(directory),tray_enabled=not testing)
+    if args.open_chat and not testing:companion.show_chat()
     if server:
         def activate():
             while server.hasPendingConnections():
@@ -105,6 +109,7 @@ def main():
                     message=bytes(c.readAll()).decode("utf-8",errors="replace")
                     if not message:return
                     if message.strip()=="quit":companion.quit()
+                    elif message.strip()=='chat':companion.show_chat()
                     else:companion.restore()
                     c.close();c.deleteLater()
                 connection.readyRead.connect(receive)
@@ -114,13 +119,23 @@ def main():
         result={"code":0}
         def run_test():
             try:
-                if args.vision_smoke_test:
+                if args.chat_smoke_test:
+                    from study_pet.chat_smoke import run
+                    run(companion,args.preview_path)
+                elif args.companion_smoke_test:
+                    from study_pet.companion_smoke import run
+                    run(companion,args.preview_path)
+                elif args.vision_smoke_test:
                     from study_pet.vision_smoke import run
                     run(companion,args.preview_path,args.vision_fixtures)
                 else:smoke_test(companion,args.preview_path)
             except Exception:
                 import traceback;traceback.print_exc();result["code"]=1
+                if args.preview_path:
+                    args.preview_path.parent.mkdir(parents=True,exist_ok=True)
+                    args.preview_path.with_suffix('.error.txt').write_text(traceback.format_exc(),encoding='utf-8')
             finally:
+                companion.shutdown_chat()
                 companion.shutdown_vision()
                 companion.timer.stop()
                 companion.pet.canvas._animation.stop()
@@ -129,6 +144,7 @@ def main():
                 companion.pet._mood_timer.stop()
                 companion.pet._screen_timer.stop()
                 companion.panel.hide()
+                if companion.history_panel is not None:companion.history_panel.hide()
                 companion.pet.hide()
                 app.quit()
         QTimer.singleShot(250,run_test)
@@ -140,7 +156,7 @@ def main():
 if __name__=="__main__":
     try:sys.exit(main())
     except Exception:
-        if '--smoke-test' in sys.argv or '--vision-smoke-test' in sys.argv:
+        if any(flag in sys.argv for flag in ('--smoke-test','--vision-smoke-test','--companion-smoke-test','--chat-smoke-test')):
             raise
         logging.exception("皮卡丘启动失败")
         from PySide6.QtWidgets import QMessageBox

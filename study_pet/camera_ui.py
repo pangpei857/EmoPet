@@ -1,12 +1,55 @@
 """User-controlled local vision preview and reminder settings."""
-import time
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
-from PySide6.QtWidgets import (QCheckBox,QComboBox,QDoubleSpinBox,QFileDialog,QFormLayout,
-    QHBoxLayout,QLabel,QPushButton,QSpinBox,QVBoxLayout,QWidget,QGroupBox)
+from PySide6.QtWidgets import (QAbstractSpinBox,QCheckBox,QComboBox,QDoubleSpinBox,QFileDialog,QFormLayout,
+    QHBoxLayout,QLabel,QLayout,QPushButton,QScrollArea,QSizePolicy,QSpinBox,QVBoxLayout,QWidget,QGroupBox)
 
-from .perception import BrowCalibration, ReminderPolicy, VisionSettings
+from .perception import BrowCalibration, ReminderPolicy, VisionSettings, ReminderGate
+
+
+class _StepButtons:
+    """Visible text controls instead of platform-dependent spin arrow glyphs."""
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.plus_button=QPushButton('+',self);self.minus_button=QPushButton('−',self)
+        for button,label in ((self.plus_button,'增加'),(self.minus_button,'减少')):
+            button.setAccessibleName(label);button.setToolTip(label)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus);button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setAutoRepeat(True);button.setAutoRepeatDelay(400);button.setAutoRepeatInterval(100)
+            button.setStyleSheet('''QPushButton { padding:0; min-width:0; min-height:0;
+                border:0; border-left:1px solid #DCE4DD; border-radius:0;
+                background:#FFF3CE; color:#6F501C; font-size:17px; font-weight:600; }
+                QPushButton:hover { background:#FFE4A0; }
+                QPushButton:pressed { background:#F3CF70; }
+                QPushButton:disabled { color:#B9B6AC; background:#F2F2EB; }''')
+        self.plus_button.clicked.connect(self.stepUp);self.minus_button.clicked.connect(self.stepDown)
+        self.valueChanged.connect(self.update_steps)
+
+    def update_steps(self,*args):
+        self.plus_button.setEnabled(not self.isReadOnly() and self.value()<self.maximum())
+        self.minus_button.setEnabled(not self.isReadOnly() and self.value()>self.minimum())
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if not hasattr(self,'plus_button'):return
+        width=28;top=(self.height()-2)//2
+        self.plus_button.setGeometry(self.width()-width-1,1,width,top)
+        self.minus_button.setGeometry(self.width()-width-1,top+1,width,self.height()-top-2)
+        self.lineEdit().setGeometry(9,1,max(1,self.width()-width-14),self.height()-2)
+        self.plus_button.raise_();self.minus_button.raise_();self.update_steps()
+
+    def showEvent(self,event):
+        super().showEvent(event);self.update_steps()
+
+
+class TimeSpinBox(_StepButtons,QSpinBox):
+    pass
+
+
+class ThresholdSpinBox(_StepButtons,QDoubleSpinBox):
+    pass
 
 
 class PreviewCanvas(QWidget):
@@ -56,12 +99,13 @@ class CameraPanel(QWidget):
     settings_changed=Signal(object)
     feedback_requested=Signal(object)
 
-    def __init__(self,controller,settings=None,context=None,parent=None):
+    def __init__(self,controller,settings=None,context=None,parent=None,gate=None):
         super().__init__(parent)
         self.controller=controller;self.settings=settings or VisionSettings()
         self.context=context or (lambda:(False,True))
         self.policy=ReminderPolicy(self.settings);self.calibration=None
-        self._snooze_until=0.;self._last_notice_at=0.;self._video_mode=False
+        self.gate=gate or ReminderGate()
+        self._last_notice_at=0.;self._video_mode=False
         self.setWindowTitle('雨衣皮卡丘 · 视觉陪伴')
         self.setObjectName('panel');self.resize(970,680);self.setMinimumSize(860,620)
         outer=QVBoxLayout(self);outer.setContentsMargins(22,20,22,20);outer.setSpacing(13)
@@ -87,16 +131,36 @@ class CameraPanel(QWidget):
         self.mirror=QCheckBox('镜像预览');self.mirror.setChecked(True)
         self.mirror.toggled.connect(self.set_mirror);preview_col.addWidget(self.mirror)
         columns.addLayout(preview_col,1)
-        side=QVBoxLayout();side.setSpacing(12)
+        settings_body=QWidget()
+        side=QVBoxLayout(settings_body);side.setContentsMargins(0,0,0,0);side.setSpacing(12)
+        side.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.settings_scroll=QScrollArea();self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.settings_scroll.setMinimumWidth(280);self.settings_scroll.setMaximumWidth(320)
+        self.settings_scroll.setStyleSheet('QScrollArea{border:0;background:transparent;} QScrollArea>QWidget>QWidget{background:transparent;}')
+        self.settings_scroll.setWidget(settings_body)
         group=QGroupBox('提醒设置');form=QFormLayout(group);form.setSpacing(10)
+        group.setStyleSheet('''
+            QSpinBox,QDoubleSpinBox { background:white; border:1px solid #DCE4DD;
+                border-radius:8px; padding:0 31px 0 9px; min-height:36px; }
+            QSpinBox QLineEdit,QDoubleSpinBox QLineEdit {
+                border:0; padding:0; min-height:0; background:transparent; }
+        ''')
         self.phone=QCheckBox('手机提醒');self.phone.setChecked(self.settings.phone_enabled)
         self.care=QCheckBox('眉部关怀');self.care.setChecked(self.settings.care_enabled)
         self.focus_only=QCheckBox('仅在专注计时中提醒');self.focus_only.setChecked(self.settings.focus_only)
         form.addRow(self.phone);form.addRow(self.care);form.addRow(self.focus_only)
-        self.phone_duration=QSpinBox();self.phone_duration.setRange(3,60);self.phone_duration.setSuffix(' 秒');self.phone_duration.setValue(self.settings.phone_seconds)
-        self.care_duration=QSpinBox();self.care_duration.setRange(2,30);self.care_duration.setSuffix(' 秒');self.care_duration.setValue(self.settings.care_seconds)
-        self.cooldown=QSpinBox();self.cooldown.setRange(30,600);self.cooldown.setSuffix(' 秒');self.cooldown.setValue(self.settings.cooldown_seconds)
-        self.brow=QDoubleSpinBox();self.brow.setRange(.15,.95);self.brow.setSingleStep(.05);self.brow.setDecimals(2);self.brow.setValue(self.settings.brow_threshold)
+        self.phone_duration=TimeSpinBox();self.phone_duration.setRange(3,60);self.phone_duration.setSuffix(' 秒');self.phone_duration.setValue(self.settings.phone_seconds)
+        self.care_duration=TimeSpinBox();self.care_duration.setRange(2,30);self.care_duration.setSuffix(' 秒');self.care_duration.setValue(self.settings.care_seconds)
+        self.cooldown=TimeSpinBox();self.cooldown.setRange(30,600);self.cooldown.setSuffix(' 秒');self.cooldown.setValue(self.settings.cooldown_seconds)
+        self.brow=ThresholdSpinBox();self.brow.setRange(.15,.95);self.brow.setSingleStep(.05);self.brow.setDecimals(2);self.brow.setValue(self.settings.brow_threshold)
+        for control,label in ((self.phone_duration,'手机持续时间（秒）'),(self.care_duration,'眉部持续时间（秒）'),
+                              (self.cooldown,'提醒间隔（秒）'),(self.brow,'眉部阈值')):
+            control.setMinimumHeight(38);control.setMinimumWidth(130)
+            control.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+            control.setAccessibleName(label)
+            control.plus_button.setAccessibleName('增加'+label);control.minus_button.setAccessibleName('减少'+label)
+            control.lineEdit().setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
         self.brow.setToolTip('分数越高，触发越谨慎。可先校准自然表情，再按自己的情况调整。')
         form.addRow('手机持续',self.phone_duration);form.addRow('眉部持续',self.care_duration)
         form.addRow('提醒间隔',self.cooldown);form.addRow('眉部阈值',self.brow)
@@ -106,9 +170,11 @@ class CameraPanel(QWidget):
         self.baseline_label=QLabel();self.baseline_label.setWordWrap(True);self.baseline_label.setObjectName('muted');side.addWidget(self.baseline_label)
         self.update_baseline_label()
         self.snooze=QPushButton('暂停提醒 10 分钟');self.snooze.clicked.connect(self.toggle_snooze);side.addWidget(self.snooze)
+        self.pause_status=QLabel('');self.pause_status.setWordWrap(True);self.pause_status.setObjectName('muted');side.addWidget(self.pause_status)
+        self._control_timer=QTimer(self);self._control_timer.timeout.connect(self.update_reminder_controls);self._control_timer.start(1000)
         hint=QLabel('检测到手机仅表示画面里有手机。\n手机靠近手部并持续出现时，才考虑提醒。\n\n眉部变化只用于温和关怀。多人入镜时暂停自动提醒。')
         hint.setWordWrap(True);hint.setObjectName('muted');side.addWidget(hint);side.addStretch()
-        columns.addLayout(side);outer.addLayout(columns,1)
+        columns.addWidget(self.settings_scroll);outer.addLayout(columns,1)
         self.notice=QLabel('等待开启。你可以随时关闭摄像头或暂停提醒。');self.notice.setWordWrap(True)
         self.notice.setStyleSheet('background:#FFF2CD;border-radius:8px;padding:10px;color:#71501D;')
         outer.addWidget(self.notice)
@@ -180,11 +246,19 @@ class CameraPanel(QWidget):
         self.notice.setText('请独自正对摄像头，保持自然表情约 3 秒。')
 
     def toggle_snooze(self):
-        self._snooze_until=0. if time.monotonic()<self._snooze_until else time.monotonic()+600
+        self.gate.toggle_snooze()
         self.policy.reset_evidence()
-        paused=time.monotonic()<self._snooze_until
-        self.snooze.setText('恢复提醒' if paused else '暂停提醒 10 分钟')
+        paused=self.gate.snoozed
+        self.update_reminder_controls()
         self.notice.setText('提醒已暂停 10 分钟，预览继续。' if paused else '提醒已恢复。')
+
+    def update_reminder_controls(self):
+        gate=self.gate;now=gate.clock()
+        self.snooze.setText('恢复提醒' if gate.snoozed else '暂停提醒 10 分钟')
+        parts=[]
+        for label,deadline in [('全部提醒',gate.snooze_until),('手机提醒',gate.phone_until),('眉部关怀',gate.care_until)]:
+            if deadline>now:parts.append(f'{label}暂停，剩余 {max(1,round((deadline-now)/60))} 分钟')
+        self.pause_status.setText('\n'.join(parts))
 
     def on_frame(self,item):
         if self.controller.state!='running':return
@@ -200,10 +274,11 @@ class CameraPanel(QWidget):
             elif not o.faces:self.notice.setText('校准中：请让面部进入画面。')
             elif len(o.faces)>1:self.notice.setText('校准中：请保持只有一人入镜。')
             return
-        paused=time.monotonic()<self._snooze_until
-        if not paused:self.snooze.setText('暂停提醒 10 分钟')
+        paused=self.gate.snoozed
+        self.update_reminder_controls()
         focus_active,visible=self.context()
-        event=self.policy.update(o,focus_active=focus_active,pet_visible=visible,snoozed=paused or self._video_mode)
+        event=self.policy.update(o,focus_active=focus_active,pet_visible=visible,snoozed=paused or self._video_mode,
+            phone_paused=self.gate.phone_paused,care_paused=self.gate.care_paused)
         if event:
             self._last_notice_at=o.timestamp
             self.notice.setText('刚刚提醒：'+event.text.replace('\n',' '));self.feedback_requested.emit(event)
@@ -214,6 +289,7 @@ class CameraPanel(QWidget):
             elif self.settings.focus_only and not focus_active:message='预览中。开始专注计时后，才会触发自动提醒。'
             elif len(o.faces)>1:message='多人入镜，自动提醒暂停。'
             elif not o.faces:message='等待面部进入画面。'
+            elif self.gate.phone_paused:message='手机提醒暂时暂停，眉部关怀仍按设置工作。'
             elif self.policy.phone_duration>0:message=f'手机靠近手部：{self.policy.phone_duration:.0f} / {self.settings.phone_seconds} 秒'
             elif self.policy.care_duration>0:message=f'眉部变化：{self.policy.care_duration:.0f} / {self.settings.care_seconds} 秒'
             else:message='正在安静陪伴，提醒之间会保留冷却时间。'
