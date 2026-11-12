@@ -6,7 +6,7 @@ import time
 import cv2
 import numpy as np
 
-from .perception import Box, Observation
+from .perception import Box, FaceFeatures, Observation
 
 MODEL_DIR=Path(__file__).resolve().parents[1]/'assets'/'models'
 
@@ -98,18 +98,19 @@ class VisionEngine:
         hand_started=time.monotonic()
         hands=self.hand.detect_for_video(image,stamp)
         hand_ms=(time.monotonic()-hand_started)*1000
-        face_boxes=[]
-        for landmarks in faces.face_landmarks:
+        face_boxes=[];features=[]
+        for index,landmarks in enumerate(faces.face_landmarks):
             xs=[p.x for p in landmarks];ys=[p.y for p in landmarks]
             face_boxes.append(Box(max(0.,min(xs)),max(0.,min(ys)),min(1.,max(xs)),min(1.,max(ys))))
-        score=down=0.
-        if len(face_boxes)==1 and faces.face_blendshapes:
-            values={item.category_name:item.score for item in faces.face_blendshapes[0]}
-            score=(values.get('browDownLeft',0.)+values.get('browDownRight',0.))/2
-            down=(values.get('eyeLookDownLeft',0.)+values.get('eyeLookDownRight',0.))/2
+            categories=faces.face_blendshapes[index] if index<len(faces.face_blendshapes) else ()
+            features.append(FaceFeatures(face_boxes[-1],tuple((item.category_name,float(item.score)) for item in categories)))
+        single=features[0] if len(features)==1 else None
+        score=single.brow_score if single is not None else 0.
+        down=single.eyes_down if single is not None else 0.
         hand_points=tuple(tuple((p.x,p.y) for p in hand) for hand in hands.hand_landmarks)
         return rgb,Observation(now,(),hand_points,tuple(face_boxes),score,down,
-            (time.monotonic()-started)*1000,face_ms=face_ms,hand_ms=hand_ms)
+            (time.monotonic()-started)*1000,face_ms=face_ms,hand_ms=hand_ms,
+            face_features=tuple(features),brow_valid=single is not None and single.brow_valid)
 
     def close(self):
         for detector in (self.face,self.hand):

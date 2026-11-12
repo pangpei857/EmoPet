@@ -1,9 +1,11 @@
 import threading
 import time
 import unittest
+from unittest.mock import patch
+from math import floor
 
-from study_pet.perception import Observation
-from study_pet.vision_pipeline import LatestFrames,ParallelAnalysis
+from study_pet.perception import Box,FaceFeatures,Observation
+from study_pet.vision_pipeline import CapturedFrame,LatestFrames,ParallelAnalysis
 
 
 class PipelineTests(unittest.TestCase):
@@ -53,6 +55,40 @@ class PipelineTests(unittest.TestCase):
                 self.assertTrue(stop.wait(1.))
             self.assertEqual([item['type'] for item in messages],['error'])
         finally:self.assertTrue(pipeline.close())
+
+    def test_face_resolution_receives_merged_three_hz_phone_results(self):
+        stop=threading.Event();output=[]
+        class Clock:
+            value=0.
+            def monotonic(self):return self.value
+        clock=Clock()
+        def device(t):
+            shift=min(.05,max(0.,t-.8)*.05)
+            return Box(.45+shift,.45,.70+shift,.9,.9)
+        class Frames:
+            sequence=0
+            def next(self,after,event):
+                if self.sequence>=41:event.set();return None
+                t=round(self.sequence*.1,2);self.sequence+=1;clock.value=t+.02
+                stamp=max(0.,floor((t-.14)*3)/3)
+                pipeline.phone_result=(stamp,(device(stamp),),140.,3.)
+                main=Box(.25,.05,.65,.4);p=device(t)
+                faces=(main,Box(p.x1+.02,.47,p.x1+.07,.53)) if t>=.8 else (main,)
+                features=tuple(FaceFeatures(b,(('browDownLeft',.1 if j==0 else .99),
+                    ('browDownRight',.1 if j==0 else .99))) for j,b in enumerate(faces))
+                return CapturedFrame(self.sequence,t,Observation(t,faces=faces,face_features=features))
+        class Features:
+            def analyze_features(self,image,timestamp):return None,image
+        class Stop:
+            def is_set(self):return stop.is_set()
+            def set(self):stop.set()
+            def wait(self,delay):pass
+        pipeline=ParallelAnalysis(Frames(),Features(),None,Stop(),output.append)
+        with patch('study_pet.vision_pipeline.time',clock):pipeline.face_loop()
+        resolved=[item['observation'] for item in output if item['observation'].filtered_faces]
+        self.assertTrue(resolved)
+        self.assertTrue(all(o.has_primary and o.primary_face==0 and o.brow_score==.1 for o in resolved))
+        self.assertTrue(all(o.phone_timestamp is not None and o.phone_fresh for o in resolved))
 
 
 if __name__=='__main__':unittest.main()

@@ -67,7 +67,7 @@ def run(companion,preview=None,fixtures=None):
             assert len(frames)>=60,controller.message
             assert len(observations)>=15,'Independent feature analysis did not publish results'
             assert phone_times,'Independent phone analysis did not publish results'
-            if portrait is not None:assert any(len(o.faces)==1 and o.face_fresh for o in observations),'Async face tracking failed'
+            if portrait is not None:assert any(o.has_primary and o.brow_reliable for o in observations),'Async primary face/blendshape tracking failed'
             # Compare against the actual expensive model, not the arbitrary
             # face-worker rate: a 15 Hz preview and 15 Hz face worker may be
             # independent even though their frame counts are identical.

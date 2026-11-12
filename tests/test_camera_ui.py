@@ -9,7 +9,8 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from study_pet.camera_ui import CameraPanel
-from study_pet.perception import Box,Observation,VisionSettings
+from study_pet.perception import Box,FaceFeatures,Observation,VisionSettings
+from study_pet.face_tracking import PrimaryFaceTracker
 from study_pet.ui import Companion,STYLE
 from study_pet.storage import Store
 
@@ -115,6 +116,34 @@ class CameraUiTests(unittest.TestCase):
         self.assertIn('90%',self.panel.details.text())
         self.panel.focus_only.setChecked(True);self.focus=False;self.panel.update_diagnostics(force=True)
         self.assertIn('尚未开始专注计时',self.panel.diagnostics.text())
+
+    def test_resolved_fake_face_does_not_display_multiple_people_or_block_calibration(self):
+        self.controller.start(0,700);tracker=PrimaryFaceTracker()
+        main=Box(.2,.05,.6,.4)
+        for i in range(50):
+            t=round(i*.1,2);shift=min(.05,max(0.,(i-8)*.005))
+            phone=Box(.45+shift,.45,.70+shift,.9,.9)
+            fake=Box(.47+shift,.47,.52+shift,.53)
+            faces=(main,fake) if i>=8 else (main,)
+            features=tuple(FaceFeatures(box,(('browDownLeft',.1 if j==0 else .99),
+                ('browDownRight',.1 if j==0 else .99))) for j,box in enumerate(faces))
+            o=tracker.update(Observation(t,(phone,),faces=faces,phone_timestamp=t,face_features=features))
+            if i==18:self.panel.begin_calibration()
+            self.controller.observation_ready.emit(o)
+        self.panel.update_diagnostics(force=True)
+        self.assertEqual(o.filtered_faces,(1,));self.assertIn('已排除疑似手机假脸',self.panel.details.text())
+        self.assertNotIn('多人',self.panel.diagnostics.text())
+        self.assertIsNone(self.panel.calibration);self.assertAlmostEqual(self.panel.settings.baseline,.1)
+
+    def test_face_diagnostics_are_logged_by_parent_without_recording_features(self):
+        self.controller.start(0,700)
+        o=Observation(time.monotonic(),faces=(Box(.2,.1,.5,.4),Box(.43,.43,.47,.47)),
+            face_state='uncertain',face_reason='phone_candidate_pending',primary_face=0,primary_id=1)
+        with self.assertLogs('study_pet.face_tracking',level='INFO') as captured:
+            self.controller.observation_ready.emit(o)
+        self.assertIn('reason=phone_candidate_pending',captured.output[0])
+        self.assertIn('candidates=2',captured.output[0])
+        self.assertNotIn('blendshape',captured.output[0])
 
     def test_small_panel_keeps_values_readable_and_plus_minus_work(self):
         self.panel.resize(860,620);APP.processEvents()

@@ -7,6 +7,16 @@ from PySide6.QtWidgets import (QAbstractSpinBox,QCheckBox,QComboBox,QDoubleSpinB
     QHBoxLayout,QLabel,QLayout,QPushButton,QScrollArea,QSizePolicy,QSpinBox,QVBoxLayout,QWidget,QGroupBox)
 
 from .perception import BrowCalibration, ReminderPolicy, VisionSettings, ReminderGate
+from .face_tracking import FaceDiagnostics
+
+FACE_REASONS={
+    'acquiring_primary':'正在确认主用户','primary_missing':'主用户暂时离开',
+    'extra_face_pending':'额外人脸待确认','phone_unaligned':'手机与人脸时间未对齐',
+    'phone_candidate_pending':'疑似手机假脸，正在验证',
+    'single_recovery':'正在确认恢复单人','confirmed_multiple':'已确认多人',
+    'stale_face':'面部结果过期','invalid_timestamp':'时间戳异常',
+    'stable_primary':'主用户稳定','phone_attached_filtered':'已排除疑似手机假脸',
+}
 
 
 class _StepButtons:
@@ -86,8 +96,12 @@ class PreviewCanvas(QWidget):
         o=self.observation
         if o is None:return
         o=o.freshened(time.monotonic())
-        for face in o.faces if o.face_fresh else ():
-            p.setPen(QPen(QColor('#A3D7B5'),1.5));p.drawRoundedRect(box_rect(face),5,5)
+        for index,face in enumerate(o.faces if o.face_fresh else ()):
+            excluded=index in o.filtered_faces
+            primary=o.has_primary and (index==o.primary_face or o.face_state is None)
+            p.setPen(QPen(QColor('#89948D' if excluded else '#A3D7B5' if primary else '#E8BC70'),
+                2.5 if primary else 1.5,Qt.PenStyle.DashLine if excluded else Qt.PenStyle.SolidLine))
+            p.drawRoundedRect(box_rect(face),5,5)
         for hand in o.hands if o.face_fresh else ():
             p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor('#7DD7CE'))
             for x,y in hand:p.drawEllipse(point(x,y),2,2)
@@ -107,6 +121,7 @@ class CameraPanel(QWidget):
         self.controller=controller;self.settings=settings or VisionSettings()
         self.context=context or (lambda:(False,True))
         self.policy=ReminderPolicy(self.settings);self.calibration=None
+        self.face_diagnostics=FaceDiagnostics()
         self.gate=gate or ReminderGate()
         self._last_notice_at=0.;self._video_mode=False
         self._observation=None;self._last_preview_at=None;self._preview_fps=0.;self._preview_delay=0.
@@ -185,7 +200,7 @@ class CameraPanel(QWidget):
         self.snooze=QPushButton('暂停提醒 10 分钟');self.snooze.clicked.connect(self.toggle_snooze);side.addWidget(self.snooze)
         self.pause_status=QLabel('');self.pause_status.setWordWrap(True);self.pause_status.setObjectName('muted');side.addWidget(self.pause_status)
         self._control_timer=QTimer(self);self._control_timer.timeout.connect(self.update_reminder_controls);self._control_timer.start(1000)
-        hint=QLabel('检测到手机仅表示画面里有手机。\n手机靠近手部并持续出现时，才考虑提醒。\n\n眉部变化只用于温和关怀。多人入镜时暂停自动提醒。')
+        hint=QLabel('检测到手机仅表示画面里有手机。\n手机靠近手部并持续出现时，才考虑提醒。\n\n额外人脸待确认时暂停累计，确认多人后暂停提醒。灰色虚框为已排除的手机相关候选。眉部变化只用于温和关怀。')
         hint.setWordWrap(True);hint.setObjectName('muted');side.addWidget(hint);side.addStretch()
         columns.addWidget(self.settings_scroll);outer.addLayout(columns,1)
         self.notice=QLabel('等待开启。你可以随时关闭摄像头或暂停提醒。');self.notice.setWordWrap(True)
@@ -300,6 +315,7 @@ class CameraPanel(QWidget):
 
     def on_observation(self,o):
         if self.controller.state!='running':return
+        self.face_diagnostics.record(o)
         self._observation=o;self.preview.observation=o;self.preview.update()
         if self.calibration is not None:
             value=self.calibration.add(o) if o.face_fresh else None
@@ -309,7 +325,8 @@ class CameraPanel(QWidget):
                 self.settings_changed.emit(self.settings.as_dict());self.update_baseline_label()
                 self.notice.setText('自然表情校准完成。当前阈值保持不变，可点击“使用校准推荐值”或手动调整。')
             elif not o.faces:self.notice.setText('校准中：请让面部进入画面。')
-            elif len(o.faces)>1:self.notice.setText('校准中：请保持只有一人入镜。')
+            elif o.user_state=='multiple':self.notice.setText('校准中：请保持只有一人入镜。')
+            elif not o.brow_reliable:self.notice.setText('校准中：等待稳定主用户与可靠的眉部特征。')
             self.update_diagnostics()
             return
         paused=self.gate.snoozed
@@ -324,9 +341,10 @@ class CameraPanel(QWidget):
             elif paused:message='提醒已暂停，预览继续。'
             elif not visible:message='桌宠已隐藏，自动提醒暂停。'
             elif self.settings.focus_only and not focus_active:message='预览中。开始专注计时后，才会触发自动提醒。'
-            elif len(o.faces)>1:message='多人入镜，自动提醒暂停。'
+            elif o.user_state=='multiple':message='已确认多人入镜，自动提醒暂停。'
             elif not o.faces:message='等待面部进入画面。'
             elif not o.face_fresh:message='面部结果已过期，等待新的识别结果。'
+            elif not o.has_primary:message='人脸暂不确定，暂停累计：'+FACE_REASONS.get(o.face_reason,'等待稳定主用户')
             elif self.gate.phone_paused:message='手机提醒暂时暂停，眉部关怀仍按设置工作。'
             elif self.policy.phone_duration>0:message=f'手机靠近手部：{self.policy.phone_duration:.0f} / {self.settings.phone_seconds} 秒'
             elif self.policy.care_duration>0:message=f'眉部变化：{self.policy.care_duration:.0f} / {self.settings.care_seconds} 秒'
@@ -344,8 +362,9 @@ class CameraPanel(QWidget):
         self._last_diagnostics_at=now;o=o.freshened(now)
         phone_text=('等待更新' if not o.phone_fresh else
             f'已识别 {max(p.score for p in o.phones):.0%}' if o.phones else '未识别')
-        brow_text=f'{o.brow_score:.2f}' if o.face_fresh else '等待更新'
-        self.details.setText(f'手机：{phone_text} · 手部 {len(o.hands) if o.face_fresh else 0} · 面部 {len(o.faces) if o.face_fresh else 0}\n'
+        brow_text=f'{o.brow_score:.2f}' if o.brow_reliable else '等待确认'
+        face_text=FACE_REASONS.get(o.face_reason,'单人' if o.has_primary else '等待确认') if o.face_fresh else '已过期'
+        self.details.setText(f'手机：{phone_text} · 手部 {len(o.hands) if o.face_fresh else 0} · 人脸候选 {len(o.faces)}（{face_text}）\n'
             f'手部关联：{"满足" if o.phone_near_hand else "不满足"} · 眉部分值 {brow_text} / 阈值 {self.settings.brow_threshold:.2f}')
         age=max(0.,(now-o.timestamp)*1000) if o.asynchronous else o.inference_ms
         self.performance.setText(f'预览 {self._preview_fps:.0f} 帧/秒 · 显示延迟 {self._preview_delay:.0f} ms · 面部结果 {age:.0f} ms\n'
@@ -360,8 +379,9 @@ class CameraPanel(QWidget):
         elif not visible:common='桌宠已隐藏'
         elif s.focus_only and not focus:common='尚未开始专注计时'
         elif not o.face_fresh:common='面部结果过期，等待更新'
-        elif len(o.faces)>1:common='多人入镜，暂停累计'
+        elif o.user_state=='multiple':common='已确认多人，暂停累计'
         elif not o.faces:common='没有检测到面部'
+        elif not o.has_primary:common='暂不确定，暂停累计：'+FACE_REASONS.get(o.face_reason,'等待稳定主用户')
         cooldown=self.policy.cooldown_remaining(o.timestamp)
         def reason(kind):
             phone=kind=='phone'
@@ -375,6 +395,7 @@ class CameraPanel(QWidget):
                 if not o.phone_near_hand:return '已识别手机，手部关联不满足'
                 progress=f'{self.policy.phone_duration:.1f} / {s.phone_seconds} 秒'
             else:
+                if not o.brow_reliable:return '等待主用户的可靠眉部特征'
                 if o.brow_score<s.brow_threshold:return f'分值 {o.brow_score:.2f}，未达到 {s.brow_threshold:.2f}'
                 progress=f'{self.policy.care_duration:.1f} / {s.care_seconds} 秒'
             if cooldown>0:return f'冷却剩余 {cooldown:.0f} 秒；累计 {progress}'

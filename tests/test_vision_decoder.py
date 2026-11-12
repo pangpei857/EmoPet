@@ -1,6 +1,7 @@
 import unittest
+from types import SimpleNamespace
 import numpy as np
-from study_pet.vision import decode_phones
+from study_pet.vision import decode_phones,VisionEngine
 
 
 class PhoneDecoderTests(unittest.TestCase):
@@ -19,6 +20,26 @@ class PhoneDecoderTests(unittest.TestCase):
     def test_empty_detection_is_empty_and_invalid_shape_is_rejected(self):
         self.assertEqual(decode_phones(np.zeros((1,84,10)),640,480,1.,0,80),())
         with self.assertRaises(ValueError):decode_phones(np.zeros((1,6,10)),640,480,1.,0,80)
+
+
+class FaceFeatureExtractionTests(unittest.TestCase):
+    def test_multiple_faces_keep_separate_full_blendshape_vectors(self):
+        def landmarks(x):return [SimpleNamespace(x=x,y=.1),SimpleNamespace(x=x+.2,y=.4)]
+        def scores(value):return [SimpleNamespace(category_name=name,score=value) for name in
+            ('browDownLeft','browDownRight','jawOpen')]
+        face_result=SimpleNamespace(face_landmarks=[landmarks(.1),landmarks(.6)],
+            face_blendshapes=[scores(.1),scores(.9)])
+        engine=VisionEngine.__new__(VisionEngine);engine._timestamp=-1
+        engine.mp=SimpleNamespace(Image=lambda **kwargs:kwargs,ImageFormat=SimpleNamespace(SRGB=1))
+        engine.face=SimpleNamespace(detect_for_video=lambda *args:face_result)
+        engine.hand=SimpleNamespace(detect_for_video=lambda *args:SimpleNamespace(hand_landmarks=[]))
+        _,o=engine.analyze_features(np.zeros((12,16,3),dtype=np.uint8),1.)
+        self.assertEqual(len(o.face_features),2)
+        self.assertEqual(tuple(f.box for f in o.face_features),o.faces)
+        self.assertAlmostEqual(o.face_features[0].brow_score,.1)
+        self.assertAlmostEqual(o.face_features[1].brow_score,.9)
+        self.assertIn(('jawOpen',.9),o.face_features[1].blendshapes)
+        self.assertFalse(o.brow_valid);self.assertEqual(o.brow_score,0.)
 
 
 if __name__=='__main__':unittest.main()

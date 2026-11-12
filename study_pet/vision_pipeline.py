@@ -4,6 +4,8 @@ import logging
 import threading
 import time
 
+from .face_tracking import PrimaryFaceTracker
+
 
 @dataclass(frozen=True)
 class CapturedFrame:
@@ -76,7 +78,7 @@ class ParallelAnalysis:
             self.stop.wait(max(0.,1/3-(time.monotonic()-started)))
 
     def face_loop(self):
-        sequence=0;rate=RateMeter()
+        sequence=0;rate=RateMeter();tracker=PrimaryFaceTracker()
         while not self.stop.is_set():
             frame=self.frames.next(sequence,self.stop)
             if frame is None:continue
@@ -87,6 +89,7 @@ class ParallelAnalysis:
             if phone is not None:
                 values.update(phone_timestamp=phone[0],phones=phone[1],phone_ms=phone[2],phone_fps=phone[3])
             observation=replace(observation,**values).freshened(time.monotonic())
+            observation=tracker.update(observation)
             if not self.stop.is_set():self.emit({'type':'observation','observation':observation})
             self.stop.wait(max(0.,1/15-(time.monotonic()-started)))
 
