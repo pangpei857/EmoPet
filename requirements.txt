@@ -4,4 +4,9 @@ opencv-contrib-python==5.0.0.93
 onnxruntime==1.31.1
 mediapipe==1.2.2
 cv2-enumerate-cameras==1.4.0
+winrt-Windows.Media.Control==4!10.0.28000.2957
+winrt-Windows.Foundation==4!10.0.28000.2957
+winrt-Windows.Foundation.Collections==4!10.0.28000.2957
+winrt-Windows.Storage.Streams==4!10.0.28000.2957
+winrt-runtime==4.1.0
 

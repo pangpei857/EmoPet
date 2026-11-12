@@ -9,6 +9,9 @@ from .focus import FocusSession, Status
 from .storage import Store
 from .perception import FeedbackEvent,ReminderGate
 from .history import parse
+from .music_core import MusicState,MusicVisibility
+from .music_ui import MusicCard
+from .music_service import MusicController
 
 
 STYLE = """
@@ -146,6 +149,7 @@ class PetWindow(QWidget):
     position_changed = Signal()
     scale_changed = Signal(int)
     reminder_response=Signal(str,str)
+    music_command=Signal(str,str)
 
     def __init__(self):
         super().__init__()
@@ -166,6 +170,11 @@ class PetWindow(QWidget):
         self.badge=QPushButton("开始专注",self)
         self.badge.setAccessibleName("打开学习面板")
         self.badge.clicked.connect(self.open_panel)
+        self.music_card=MusicCard(self);self.music_card.hide();self._music_visible=False
+        self._music_state=MusicState();self._music_display=MusicVisibility()
+        self.music_card.command_requested.connect(self.music_command)
+        self._music_timer=QTimer(self);self._music_timer.setInterval(1000)
+        self._music_timer.timeout.connect(self.refresh_music_visibility)
         self._bubble_timer=QTimer(self);self._bubble_timer.setSingleShot(True)
         self._bubble_timer.timeout.connect(self.dismiss_bubble)
         self.bubble.dismissed.connect(self.dismiss_bubble)
@@ -222,14 +231,31 @@ class PetWindow(QWidget):
         self.canvas.base_mood=self.base_mood;self.canvas.clear_action()
 
     def foot_anchor(self):
-        return QPointF(self.x()+self.width()/2,self.y()+self.height())
+        return QPointF(self.x()+self.width()/2,self.y()+self._anchor_y)
+
+    def move_to_anchor(self,anchor):
+        self.move_bounded(QPointF(anchor.x()-self.width()/2,anchor.y()-self._anchor_y))
+
+    def set_music_state(self,state):
+        self._music_state=state;self.music_card.set_state(state);self.refresh_music_visibility()
+
+    def refresh_music_visibility(self):
+        visible=self._music_display.visible(self._music_state)
+        if visible!=self._music_visible:
+            self._music_visible=visible;self.music_card.setVisible(visible)
+            self.layout_pet(keep_anchor=True);self.ensure_on_screen()
+        if visible and self._music_state.status=='paused':
+            if not self._music_timer.isActive():self._music_timer.start()
+        else:self._music_timer.stop()
 
     def layout_size(self,percent):
         f=percent/100;width=round(300*f)
         bubble_height=self.bubble.prepare(round(294*f),f)
         canvas_y=round(3*f)+bubble_height+round(3*f)
         badge_y=canvas_y+round(273*f)
-        return width,badge_y+round(33*f),bubble_height,canvas_y,badge_y
+        height=badge_y+round(33*f)
+        if self._music_visible:height+=round(106*f)
+        return width,height,bubble_height,canvas_y,badge_y
 
     def layout_pet(self,keep_anchor=False):
         anchor=self.foot_anchor() if keep_anchor and self._layout_ready else None
@@ -239,9 +265,12 @@ class PetWindow(QWidget):
         self.bubble.setGeometry(round(3*f),round(3*f),round(294*f),bubble_height)
         self.canvas.setGeometry(round(20*f),canvas_y,round(260*f),round(278*f))
         self.badge.setGeometry(round(53*f),badge_y,round(194*f),round(30*f))
+        self._anchor_y=badge_y+round(33*f)
+        self.music_card.setGeometry(round(20*f),self._anchor_y+round(7*f),round(260*f),round(96*f))
+        self.music_card.set_scale(f)
         self.badge.setStyleSheet(f"QPushButton{{background:#FFF8E2;color:#79591E;border:1px solid #E0C477;border-radius:{round(15*f)}px;font-size:{max(11,round(12*f))}px;padding:0;}} QPushButton:hover{{background:#FFE8A0;}}")
         self._layout_ready=True
-        if anchor is not None:self.move_bounded(QPointF(anchor.x()-self.width()/2,anchor.y()-self.height()))
+        if anchor is not None:self.move_to_anchor(anchor)
 
     def set_scale(self,percent):
         area=(self.screen() or QApplication.primaryScreen()).availableGeometry()
@@ -253,15 +282,14 @@ class PetWindow(QWidget):
         if percent==self.scale_percent:return
         anchor=self.foot_anchor()
         self.scale_percent=percent;self.layout_pet()
-        self.move_bounded(QPointF(anchor.x()-self.width()/2,anchor.y()-self.height()))
+        self.move_to_anchor(anchor)
         self.scale_changed.emit(percent)
 
     def set_topmost(self,enabled):
         visible=self.isVisible();anchor=self.foot_anchor()
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,enabled)
-        position=QPointF(anchor.x()-self.width()/2,anchor.y()-self.height())
-        self.move_bounded(position)
-        if visible:self.show();self.move_bounded(position)
+        self.move_to_anchor(anchor)
+        if visible:self.show();self.move_to_anchor(anchor)
 
     def finish_drag(self):
         area=(QApplication.screenAt(self.geometry().center()) or self.screen()).availableGeometry()
@@ -402,7 +430,7 @@ class FocusPanel(QWidget):
 
 class Companion:
     """Coordinates task state and feedback. Future perception modules can call feedback()."""
-    def __init__(self, store: Store, tray_enabled=True):
+    def __init__(self, store: Store, tray_enabled=True,music_autostart=None):
         self.store=store;self.session=FocusSession();self._accounted=False
         self.history=store.history;self.history.recover_incomplete();self.history_panel=None
         self._history_id=None;self._history_saved_elapsed=0.;self._last_checkpoint=-float('inf')
@@ -410,6 +438,13 @@ class Companion:
         self.vision_controller=None;self.camera_panel=None
         self.chat_panel=None
         self.pet=PetWindow();self.panel=FocusPanel()
+        self.music_enabled=bool(store.get('music_enabled',True))
+        self.music_controller=MusicController(self.pet)
+        self.music_controller.state_changed.connect(self.on_music_state)
+        self.music_controller.busy_changed.connect(self.pet.music_card.set_busy)
+        self.music_controller.command_finished.connect(self.pet.music_card.show_error)
+        self.pet.music_command.connect(self.music_controller.command)
+        QApplication.instance().aboutToQuit.connect(self.music_controller.shutdown)
         try:self.pet.set_scale(int(store.get("scale",100)))
         except (ValueError,TypeError):pass
         self.pet.set_topmost(bool(store.get("topmost",True)))
@@ -449,7 +484,7 @@ class Companion:
         screen=QApplication.primaryScreen().availableGeometry()
         anchor=self.store.get('anchor');pos=self.store.get("position")
         if isinstance(anchor,list) and len(anchor)==2 and all(isinstance(x,(int,float)) for x in anchor):
-            self.pet.move_bounded(QPointF(anchor[0]-self.pet.width()/2,anchor[1]-self.pet.height()))
+            self.pet.move_to_anchor(QPointF(anchor[0],anchor[1]))
         elif isinstance(pos,list) and len(pos)==2 and all(isinstance(x,int) for x in pos):
             point=QPoint(*pos)
             if any(s.availableGeometry().intersects(self.pet.rect().translated(point)) for s in QApplication.screens()):
@@ -459,6 +494,8 @@ class Companion:
         self.timer=QTimer(self.pet);self.timer.timeout.connect(self.on_tick);self.timer.start(200)
         self.pet.show();self.feedback("摸摸头或戳戳肚子，\n双击打开面板，右键还有更多。","idle")
         self.refresh()
+        if self.music_enabled and (tray_enabled if music_autostart is None else music_autostart):
+            QTimer.singleShot(0,self.music_controller.start)
 
     def feedback(self,text,mood="encourage",notify=False):
         if self.pet.isVisible():self.pet.say(text,mood)
@@ -471,6 +508,11 @@ class Companion:
         menu.addAction('视觉陪伴 · 摄像头',self.show_camera)
         menu.addAction('学习记录',self.show_history)
         menu.addAction('和皮卡丘聊聊 · DeepSeek',self.show_chat)
+        music=menu.addMenu('QQ 音乐联动')
+        self.music_action=music.addAction('自动显示音乐条');self.music_action.setCheckable(True)
+        self.music_action.setChecked(self.music_enabled);self.music_action.triggered.connect(self.toggle_music)
+        self.music_status=music.addAction('等待 QQ 音乐播放');self.music_status.setEnabled(False)
+        music.addAction('重新检测 QQ 音乐',self.retry_music)
         samples=menu.addMenu('发送示例提醒')
         samples.addAction('示例：手机提醒',lambda:self.send_sample('phone'))
         samples.addAction('示例：眉部关怀',lambda:self.send_sample('care'))
@@ -499,6 +541,7 @@ class Companion:
         return menu
 
     def sync_menu(self):
+        self.music_action.setChecked(self.music_enabled)
         self.visibility_action.setText("隐藏桌宠" if self.pet.isVisible() else "显示桌宠")
         self.pause_action.setText("继续学习" if self.session.status==Status.PAUSED else "暂停学习")
         self.pause_action.setEnabled(self.session.status in {Status.RUNNING,Status.PAUSED})
@@ -507,6 +550,21 @@ class Companion:
         self.bubbles_action.setChecked(self.pet.bubbles_enabled)
         self.size_menu.setTitle(f"桌宠大小 · {self.pet.scale_percent}%")
         for value,action in self.scale_actions.items():action.setChecked(value==self.pet.scale_percent)
+
+    def on_music_state(self,state):
+        self.pet.set_music_state(state)
+        self.music_status.setText(state.message)
+        self.music_status.setToolTip('QQ 音乐需开放 Windows 系统媒体控制。'+state.message)
+
+    def toggle_music(self,enabled):
+        self.music_enabled=bool(enabled);self.store.save(music_enabled=self.music_enabled)
+        if self.music_enabled:self.music_controller.start()
+        else:self.music_controller.stop()
+
+    def retry_music(self):
+        if self.music_enabled:self.music_controller.retry()
+
+    def shutdown_music(self):self.music_controller.shutdown();self.pet._music_timer.stop()
 
     def toggle_pet(self):
         self.pet.hide() if self.pet.isVisible() else self.show_pet()
@@ -782,5 +840,6 @@ class Companion:
         if self.tray:self.tray.hide()
         self.shutdown_vision()
         self.shutdown_chat()
+        self.shutdown_music()
         if self.history_panel is not None:self.history_panel.hide()
         QApplication.quit()

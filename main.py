@@ -68,6 +68,7 @@ def main():
     parser.add_argument('--vision-smoke-test',action='store_true')
     parser.add_argument('--companion-smoke-test',action='store_true')
     parser.add_argument('--chat-smoke-test',action='store_true')
+    parser.add_argument('--music-smoke-test',action='store_true')
     parser.add_argument('--open-chat',action='store_true',help='Open the DeepSeek chat panel')
     parser.add_argument('--vision-fixtures',type=Path)
     parser.add_argument("--preview-path",type=Path)
@@ -81,7 +82,7 @@ def main():
     app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(app_font)
     app.setWindowIcon(pet_icon())
-    testing=args.smoke_test or args.vision_smoke_test or args.companion_smoke_test or args.chat_smoke_test
+    testing=args.smoke_test or args.vision_smoke_test or args.companion_smoke_test or args.chat_smoke_test or args.music_smoke_test
     temporary=tempfile.TemporaryDirectory(prefix="momo-smoke-") if testing else None
     directory=Path(temporary.name) if temporary else (args.profile_dir.resolve() if args.profile_dir else Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)))
     directory.mkdir(parents=True,exist_ok=True)
@@ -119,7 +120,10 @@ def main():
         result={"code":0}
         def run_test():
             try:
-                if args.chat_smoke_test:
+                if args.music_smoke_test:
+                    from study_pet.music_smoke import run
+                    run(companion,args.preview_path)
+                elif args.chat_smoke_test:
                     from study_pet.chat_smoke import run
                     run(companion,args.preview_path)
                 elif args.companion_smoke_test:
@@ -137,6 +141,7 @@ def main():
             finally:
                 companion.shutdown_chat()
                 companion.shutdown_vision()
+                companion.shutdown_music()
                 companion.timer.stop()
                 companion.pet.canvas._animation.stop()
                 companion.pet.canvas._click_timer.stop()
@@ -156,7 +161,7 @@ def main():
 if __name__=="__main__":
     try:sys.exit(main())
     except Exception:
-        if any(flag in sys.argv for flag in ('--smoke-test','--vision-smoke-test','--companion-smoke-test','--chat-smoke-test')):
+        if any(flag in sys.argv for flag in ('--smoke-test','--vision-smoke-test','--companion-smoke-test','--chat-smoke-test','--music-smoke-test')):
             raise
         logging.exception("皮卡丘启动失败")
         from PySide6.QtWidgets import QMessageBox
