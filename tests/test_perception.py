@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from study_pet.perception import Box, Observation, VisionSettings, ReminderPolicy, BrowCalibration
 
 PHONE=Box(.4,.4,.6,.8,.9)
@@ -60,11 +61,34 @@ class ReminderTests(unittest.TestCase):
         self.assertEqual(self.p.phone_duration,0.)
         self.assertEqual(self.feed(3.25,5.75),[])
 
-    def test_brow_baseline_and_shared_cooldown(self):
+    def test_brow_uses_manual_threshold_despite_baseline_and_shares_cooldown(self):
         self.p.settings.baseline=.5
-        self.assertEqual(self.feed(0,4,phone=False,brow=.6),[])
-        self.assertEqual([e.kind for e in self.feed(4.25,7,phone=False,brow=.8)],['care'])
+        self.p.settings.brow_threshold=.10
+        self.assertEqual(self.feed(0,1.75,phone=False,brow=.12),[])
+        self.assertEqual([e.kind for e in self.feed(2,4,phone=False,brow=.12)],['care'])
         self.assertEqual(self.feed(7.25,15),[])
+
+    def test_point_one_threshold_is_saved_and_restored(self):
+        self.assertEqual(VisionSettings.from_dict({'brow_threshold':.10}).brow_threshold,.10)
+        self.assertEqual(VisionSettings.from_dict({'brow_threshold':-.5}).brow_threshold,.10)
+
+    def test_expired_async_phone_and_face_cannot_trigger_reminders(self):
+        o=replace(observation(10),asynchronous=True,phone_timestamp=10.)
+        self.assertTrue(o.freshened(10.2).phone_near_hand)
+        expired=o.freshened(11.)
+        self.assertFalse(expired.phone_near_hand)
+        self.assertFalse(expired.face_fresh)
+        self.assertIsNone(self.p.update(expired,focus_active=True))
+        fresh_face=replace(o,timestamp=11.).freshened(11.1)
+        self.assertTrue(fresh_face.face_fresh);self.assertFalse(fresh_face.phone_fresh)
+        self.assertFalse(fresh_face.phone_near_hand)
+
+    def test_async_capture_gaps_do_not_count_stale_time(self):
+        for t in (10.,10.25,10.5):
+            self.p.update(replace(observation(t),asynchronous=True,phone_timestamp=t),focus_active=True)
+        self.assertEqual(self.p.phone_duration,.5)
+        self.p.update(replace(observation(11.5),asynchronous=True,phone_timestamp=11.5),focus_active=True)
+        self.assertEqual(self.p.phone_duration,0.)
 
     def test_feature_switches_and_focus_only(self):
         self.p.settings.phone_enabled=False;self.p.settings.care_enabled=False

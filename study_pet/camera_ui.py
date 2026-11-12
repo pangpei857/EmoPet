@@ -1,4 +1,5 @@
 """User-controlled local vision preview and reminder settings."""
+import time
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
@@ -55,7 +56,7 @@ class ThresholdSpinBox(_StepButtons,QDoubleSpinBox):
 class PreviewCanvas(QWidget):
     def __init__(self,parent=None):
         super().__init__(parent)
-        self.setMinimumSize(420,300)
+        self.setMinimumSize(420,180)
         self.image=None;self.observation=None;self.mirrored=True
         self.message='开启摄像头后，画面会显示在这里。'
         self.setAccessibleName('本地视觉预览')
@@ -65,7 +66,7 @@ class PreviewCanvas(QWidget):
 
     def set_frame(self,item):
         self.image=QImage(item['rgb'],item['width'],item['height'],item['width']*3,QImage.Format.Format_RGB888).copy()
-        self.observation=item['observation'];self.update()
+        self.observation=item.get('observation',self.observation);self.update()
 
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -83,12 +84,14 @@ class PreviewCanvas(QWidget):
             return QRectF(target.x()+left*target.width(),target.y()+box.y1*target.height(),
                           (box.x2-box.x1)*target.width(),(box.y2-box.y1)*target.height())
         o=self.observation
-        for face in o.faces:
+        if o is None:return
+        o=o.freshened(time.monotonic())
+        for face in o.faces if o.face_fresh else ():
             p.setPen(QPen(QColor('#A3D7B5'),1.5));p.drawRoundedRect(box_rect(face),5,5)
-        for hand in o.hands:
+        for hand in o.hands if o.face_fresh else ():
             p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor('#7DD7CE'))
             for x,y in hand:p.drawEllipse(point(x,y),2,2)
-        for phone in o.phones:
+        for phone in o.phones if o.phone_fresh else ():
             rect=box_rect(phone);p.setBrush(Qt.BrushStyle.NoBrush);p.setPen(QPen(QColor('#FFD36A'),2.5));p.drawRect(rect)
             label=QRectF(rect.left(),max(target.top(),rect.top()-24),100,23)
             p.fillRect(label,QColor('#FFD36A'));p.setPen(QColor('#3B3016'))
@@ -106,6 +109,8 @@ class CameraPanel(QWidget):
         self.policy=ReminderPolicy(self.settings);self.calibration=None
         self.gate=gate or ReminderGate()
         self._last_notice_at=0.;self._video_mode=False
+        self._observation=None;self._last_preview_at=None;self._preview_fps=0.;self._preview_delay=0.
+        self._last_diagnostics_at=0.
         self.setWindowTitle('雨衣皮卡丘 · 视觉陪伴')
         self.setObjectName('panel');self.resize(970,680);self.setMinimumSize(860,620)
         outer=QVBoxLayout(self);outer.setContentsMargins(22,20,22,20);outer.setSpacing(13)
@@ -123,11 +128,13 @@ class CameraPanel(QWidget):
         devices.addWidget(self.devices,1);devices.addWidget(self.refresh);devices.addWidget(self.start);devices.addWidget(self.video)
         outer.addLayout(devices)
         columns=QHBoxLayout();columns.setSpacing(18)
-        preview_col=QVBoxLayout()
+        preview_col=QVBoxLayout();preview_col.setSpacing(6)
         self.preview=PreviewCanvas();preview_col.addWidget(self.preview,1)
         self.status=QLabel('摄像头已关闭');self.status.setWordWrap(True);preview_col.addWidget(self.status)
         self.details=QLabel('手机：—    手部：—    面部：—');self.details.setWordWrap(True);self.details.setObjectName('muted')
         preview_col.addWidget(self.details)
+        self.performance=QLabel('预览帧率：— · 面部延迟：—');self.performance.setWordWrap(True)
+        self.performance.setObjectName('muted');preview_col.addWidget(self.performance)
         self.mirror=QCheckBox('镜像预览');self.mirror.setChecked(True)
         self.mirror.toggled.connect(self.set_mirror);preview_col.addWidget(self.mirror)
         columns.addLayout(preview_col,1)
@@ -153,7 +160,7 @@ class CameraPanel(QWidget):
         self.phone_duration=TimeSpinBox();self.phone_duration.setRange(3,60);self.phone_duration.setSuffix(' 秒');self.phone_duration.setValue(self.settings.phone_seconds)
         self.care_duration=TimeSpinBox();self.care_duration.setRange(2,30);self.care_duration.setSuffix(' 秒');self.care_duration.setValue(self.settings.care_seconds)
         self.cooldown=TimeSpinBox();self.cooldown.setRange(30,600);self.cooldown.setSuffix(' 秒');self.cooldown.setValue(self.settings.cooldown_seconds)
-        self.brow=ThresholdSpinBox();self.brow.setRange(.15,.95);self.brow.setSingleStep(.05);self.brow.setDecimals(2);self.brow.setValue(self.settings.brow_threshold)
+        self.brow=ThresholdSpinBox();self.brow.setRange(.10,.95);self.brow.setSingleStep(.01);self.brow.setDecimals(2);self.brow.setValue(self.settings.brow_threshold)
         for control,label in ((self.phone_duration,'手机持续时间（秒）'),(self.care_duration,'眉部持续时间（秒）'),
                               (self.cooldown,'提醒间隔（秒）'),(self.brow,'眉部阈值')):
             control.setMinimumHeight(38);control.setMinimumWidth(130)
@@ -161,14 +168,20 @@ class CameraPanel(QWidget):
             control.setAccessibleName(label)
             control.plus_button.setAccessibleName('增加'+label);control.minus_button.setAccessibleName('减少'+label)
             control.lineEdit().setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
-        self.brow.setToolTip('分数越高，触发越谨慎。可先校准自然表情，再按自己的情况调整。')
+        self.brow.setToolTip('范围 0.10～0.95，越低越敏感。按这里的数值实际判断，校准不会暗中抬高阈值。')
         form.addRow('手机持续',self.phone_duration);form.addRow('眉部持续',self.care_duration)
         form.addRow('提醒间隔',self.cooldown);form.addRow('眉部阈值',self.brow)
         side.addWidget(group)
         self.calibrate=QPushButton('校准自然表情 · 3 秒');self.calibrate.clicked.connect(self.begin_calibration);self.calibrate.setEnabled(False)
         side.addWidget(self.calibrate)
         self.baseline_label=QLabel();self.baseline_label.setWordWrap(True);self.baseline_label.setObjectName('muted');side.addWidget(self.baseline_label)
+        self.apply_recommended=QPushButton('使用校准推荐值');self.apply_recommended.clicked.connect(self.use_recommended_threshold)
+        side.addWidget(self.apply_recommended)
         self.update_baseline_label()
+        self.diagnostics=QLabel('等待识别结果。');self.diagnostics.setWordWrap(True)
+        self.diagnostics.setTextFormat(Qt.TextFormat.PlainText)
+        self.diagnostics.setStyleSheet('background:#EEF2EB;border-radius:6px;padding:6px;color:#3B5148;')
+        preview_col.insertWidget(3,self.diagnostics)
         self.snooze=QPushButton('暂停提醒 10 分钟');self.snooze.clicked.connect(self.toggle_snooze);side.addWidget(self.snooze)
         self.pause_status=QLabel('');self.pause_status.setWordWrap(True);self.pause_status.setObjectName('muted');side.addWidget(self.pause_status)
         self._control_timer=QTimer(self);self._control_timer.timeout.connect(self.update_reminder_controls);self._control_timer.start(1000)
@@ -183,6 +196,7 @@ class CameraPanel(QWidget):
         controller.state_changed.connect(self.on_state)
         controller.devices_changed.connect(self.on_devices)
         controller.frame_ready.connect(self.on_frame)
+        controller.observation_ready.connect(self.on_observation)
 
     def scan(self):
         self.refresh.setEnabled(False);self.devices.setEnabled(False)
@@ -223,6 +237,9 @@ class CameraPanel(QWidget):
         self.calibrate.setEnabled(state=='running' and not self._video_mode)
         if state!='running':
             self.preview.clear(text);self.details.setText('手机：—    手部：—    面部：—')
+            self.performance.setText('预览帧率：— · 面部延迟：—');self.diagnostics.setText('等待识别结果。')
+            self._observation=None;self._last_preview_at=None;self._preview_fps=0.
+            self._last_diagnostics_at=0.
             self.policy.reset_evidence();self.calibration=None
         if state in {'off','error'}:self.notice.setText(text)
         elif state=='running':self.notice.setText('视频测试中：仅显示识别结果，不自动提醒。' if self._video_mode else '已开启本地识别，等待稳定的观察结果。')
@@ -233,12 +250,20 @@ class CameraPanel(QWidget):
         s.phone_seconds=self.phone_duration.value();s.care_seconds=self.care_duration.value()
         s.cooldown_seconds=self.cooldown.value();s.brow_threshold=self.brow.value()
         self.policy.reset_evidence();self.settings_changed.emit(s.as_dict())
+        self.update_baseline_label();self.update_diagnostics(force=True)
 
     def set_mirror(self,checked):self.preview.mirrored=checked;self.preview.update()
 
     def update_baseline_label(self):
         value=self.settings.baseline
-        self.baseline_label.setText('尚未校准；使用默认阈值。' if value is None else f'自然眉部基线：{value:.2f}')
+        recommendation=self.settings.recommended_brow_threshold
+        text='尚未校准。' if value is None else f'自然基线 {value:.2f} · 推荐阈值 {recommendation:.2f}。'
+        self.baseline_label.setText(text+f'\n实际生效阈值：{self.settings.brow_threshold:.2f}，以输入框为准。')
+        self.apply_recommended.setEnabled(recommendation is not None)
+
+    def use_recommended_threshold(self):
+        value=self.settings.recommended_brow_threshold
+        if value is not None:self.brow.setValue(value)
 
     def begin_calibration(self):
         if self.controller.state!='running' or self._video_mode:return
@@ -259,23 +284,35 @@ class CameraPanel(QWidget):
         for label,deadline in [('全部提醒',gate.snooze_until),('手机提醒',gate.phone_until),('眉部关怀',gate.care_until)]:
             if deadline>now:parts.append(f'{label}暂停，剩余 {max(1,round((deadline-now)/60))} 分钟')
         self.pause_status.setText('\n'.join(parts))
+        self.update_diagnostics()
+        if self._observation is not None:self.preview.update()
 
     def on_frame(self,item):
         if self.controller.state!='running':return
-        self.preview.set_frame(item);o=item['observation']
-        phone_text='疑似手机靠近手部' if o.phone_near_hand else '画面中有手机' if o.phones else '未检测到手机'
-        self.details.setText(f'{phone_text} · 手部 {len(o.hands)} · 面部 {len(o.faces)}\n眉部变化 {o.brow_score:.2f} · 推理 {o.inference_ms:.0f} ms')
+        now=time.monotonic()
+        if self._last_preview_at is not None and now>self._last_preview_at:
+            current=1/(now-self._last_preview_at)
+            self._preview_fps=current if not self._preview_fps else .8*self._preview_fps+.2*current
+        self._last_preview_at=now
+        self._preview_delay=max(0.,(now-item.get('captured_at',now))*1000)
+        self.preview.set_frame(item)
+        self.update_diagnostics()
+
+    def on_observation(self,o):
+        if self.controller.state!='running':return
+        self._observation=o;self.preview.observation=o;self.preview.update()
         if self.calibration is not None:
-            value=self.calibration.add(o)
+            value=self.calibration.add(o) if o.face_fresh else None
+            if not o.face_fresh:self.calibration=BrowCalibration()
             if value is not None:
                 self.settings.baseline=value;self.calibration=None
                 self.settings_changed.emit(self.settings.as_dict());self.update_baseline_label()
-                self.notice.setText('自然表情校准完成。可按实际体验调整眉部阈值。')
+                self.notice.setText('自然表情校准完成。当前阈值保持不变，可点击“使用校准推荐值”或手动调整。')
             elif not o.faces:self.notice.setText('校准中：请让面部进入画面。')
             elif len(o.faces)>1:self.notice.setText('校准中：请保持只有一人入镜。')
+            self.update_diagnostics()
             return
         paused=self.gate.snoozed
-        self.update_reminder_controls()
         focus_active,visible=self.context()
         event=self.policy.update(o,focus_active=focus_active,pet_visible=visible,snoozed=paused or self._video_mode,
             phone_paused=self.gate.phone_paused,care_paused=self.gate.care_paused)
@@ -289,11 +326,60 @@ class CameraPanel(QWidget):
             elif self.settings.focus_only and not focus_active:message='预览中。开始专注计时后，才会触发自动提醒。'
             elif len(o.faces)>1:message='多人入镜，自动提醒暂停。'
             elif not o.faces:message='等待面部进入画面。'
+            elif not o.face_fresh:message='面部结果已过期，等待新的识别结果。'
             elif self.gate.phone_paused:message='手机提醒暂时暂停，眉部关怀仍按设置工作。'
             elif self.policy.phone_duration>0:message=f'手机靠近手部：{self.policy.phone_duration:.0f} / {self.settings.phone_seconds} 秒'
             elif self.policy.care_duration>0:message=f'眉部变化：{self.policy.care_duration:.0f} / {self.settings.care_seconds} 秒'
             else:message='正在安静陪伴，提醒之间会保留冷却时间。'
             self.notice.setText(message)
+        self.update_diagnostics()
+
+    def update_diagnostics(self,force=False):
+        now=time.monotonic()
+        if not force and now-self._last_diagnostics_at<.2:return
+        o=self._observation
+        if o is None:
+            self.performance.setText(f'预览 {self._preview_fps:.0f} 帧/秒 · 等待识别结果')
+            return
+        self._last_diagnostics_at=now;o=o.freshened(now)
+        phone_text=('等待更新' if not o.phone_fresh else
+            f'已识别 {max(p.score for p in o.phones):.0%}' if o.phones else '未识别')
+        brow_text=f'{o.brow_score:.2f}' if o.face_fresh else '等待更新'
+        self.details.setText(f'手机：{phone_text} · 手部 {len(o.hands) if o.face_fresh else 0} · 面部 {len(o.faces) if o.face_fresh else 0}\n'
+            f'手部关联：{"满足" if o.phone_near_hand else "不满足"} · 眉部分值 {brow_text} / 阈值 {self.settings.brow_threshold:.2f}')
+        age=max(0.,(now-o.timestamp)*1000) if o.asynchronous else o.inference_ms
+        self.performance.setText(f'预览 {self._preview_fps:.0f} 帧/秒 · 显示延迟 {self._preview_delay:.0f} ms · 面部结果 {age:.0f} ms\n'
+            f'面部 {o.face_ms:.0f} / 手部 {o.hand_ms:.0f} / 手机 {o.phone_ms:.0f} ms · 检测 {o.face_fps:.1f} / {o.phone_fps:.1f} 次/秒')
+        self.performance.setToolTip('显示延迟：应用读取画面到界面接收，不含摄像头硬件内部延迟。\n'
+            '面部结果：对应画面被读取到现在的时间。\n模型耗时依次为面部、手部、手机；检测频率依次为面部/手部、手机。')
+        focus,visible=self.context();s=self.settings
+        common=None
+        if self._video_mode:common='视频测试，仅显示结果'
+        elif self.calibration is not None:common='正在校准，暂停提醒'
+        elif self.gate.snoozed:common='全部提醒已暂停'
+        elif not visible:common='桌宠已隐藏'
+        elif s.focus_only and not focus:common='尚未开始专注计时'
+        elif not o.face_fresh:common='面部结果过期，等待更新'
+        elif len(o.faces)>1:common='多人入镜，暂停累计'
+        elif not o.faces:common='没有检测到面部'
+        cooldown=self.policy.cooldown_remaining(o.timestamp)
+        def reason(kind):
+            phone=kind=='phone'
+            if not (s.phone_enabled if phone else s.care_enabled):return '开关已关闭'
+            if common:return common
+            if self.gate.phone_paused if phone else self.gate.care_paused:return '此类提醒已暂缓'
+            if phone:
+                if not o.phone_fresh:return '手机结果未就绪或过期'
+                if not o.phones:return '未识别到手机'
+                if not o.hands:return '已识别手机，未检测到手部'
+                if not o.phone_near_hand:return '已识别手机，手部关联不满足'
+                progress=f'{self.policy.phone_duration:.1f} / {s.phone_seconds} 秒'
+            else:
+                if o.brow_score<s.brow_threshold:return f'分值 {o.brow_score:.2f}，未达到 {s.brow_threshold:.2f}'
+                progress=f'{self.policy.care_duration:.1f} / {s.care_seconds} 秒'
+            if cooldown>0:return f'冷却剩余 {cooldown:.0f} 秒；累计 {progress}'
+            return '持续累计 '+progress
+        self.diagnostics.setText(f'手机提醒：{reason("phone")}\n眉部关怀：{reason("care")}')
 
     def closeEvent(self,event):
         self.controller.stop();self.preview.clear();self.calibration=None

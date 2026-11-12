@@ -25,24 +25,30 @@ def enumerate_devices(output):
         output.put({'type':'devices','items':[],'error':'设备列表读取失败，可刷新重试。'})
 
 
-def capture_loop(output,stop,source,backend=700):
-    cap=None;engine=None
+def capture_loop(output,stop,source,backend=700,preview_output=None):
+    cap=None;engine=None;analysis=None
     try:
         import cv2
-        from .vision import VisionEngine
+        from .vision import VisionEngine,PhoneDetector
+        from .vision_pipeline import LatestFrames,ParallelAnalysis,RateMeter
+        previews=output if preview_output is None else preview_output
         is_video=isinstance(source,str)
         cap=cv2.VideoCapture(source) if is_video else cv2.VideoCapture(source,backend)
         if not cap.isOpened():
             raise RuntimeError('无法打开视频文件。' if is_video else '无法打开摄像头。请确认设备已连接、没有被其他应用占用，并允许桌面应用使用摄像头。')
         if not is_video:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH,640);cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480)
-            cap.set(cv2.CAP_PROP_FPS,15);cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
+            cap.set(cv2.CAP_PROP_FPS,30);cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
         if stop.is_set():return
         offer(output,{'type':'status','text':'正在加载本地识别模型…'})
-        engine=VisionEngine()
+        engine=VisionEngine(include_phone=False)
+        phone=PhoneDetector()
         if stop.is_set():return
+        latest=LatestFrames()
+        analysis=ParallelAnalysis(latest,engine,phone,stop,lambda item:offer(output,item))
+        analysis.start()
         offer(output,{'type':'ready','text':'视频测试中' if is_video else '摄像头已开启'})
-        failures=0;frames=0;started=time.monotonic()
+        failures=0;frames=0;started=time.monotonic();next_preview=0.;preview_rate=RateMeter()
         fps=cap.get(cv2.CAP_PROP_FPS) if is_video else 0
         if not 1<=fps<=240:fps=25
         while not stop.is_set():
@@ -55,6 +61,7 @@ def capture_loop(output,stop,source,backend=700):
                     if not cap.grab():break
                     frames+=1
             ok,bgr=cap.read();frames+=1
+            captured_at=time.monotonic()
             if not ok:
                 if is_video:
                     offer(output,{'type':'ended','text':'视频播放结束，可重新选择视频或开启摄像头。'});return
@@ -65,16 +72,26 @@ def capture_loop(output,stop,source,backend=700):
             h,w=bgr.shape[:2]
             if w>960 or h>720:
                 factor=min(960/w,720/h);bgr=cv2.resize(bgr,(round(w*factor),round(h*factor)))
-            rgb,observation=engine.analyze(bgr,time.monotonic())
-            if stop.is_set():break
-            offer(output,{'type':'frame','width':rgb.shape[1],'height':rgb.shape[0],
-                          'rgb':rgb.tobytes(),'observation':observation})
-            stop.wait(max(0.,.125-(time.monotonic()-tick)))
+            latest.publish(bgr,captured_at)
+            # Preview does not wait for any model. Read the camera continuously
+            # even when a model is busy, so frames cannot accumulate upstream.
+            if captured_at>=next_preview:
+                rgb=cv2.cvtColor(bgr,cv2.COLOR_BGR2RGB)
+                offer(previews,{'type':'frame','width':rgb.shape[1],'height':rgb.shape[0],
+                    'rgb':rgb.tobytes(),'captured_at':captured_at,'preview_fps':preview_rate.tick(captured_at)})
+                # Keep a stable deadline instead of comparing with the last
+                # frame: Windows timer jitter can otherwise discard every
+                # other 30-fps frame at the interval boundary.
+                next_preview+=1/30
+                if next_preview<=captured_at:next_preview=captured_at+1/30
+            if is_video:stop.wait(max(0.,frames/fps-(time.monotonic()-started)))
     except Exception as error:
         logging.exception('Local vision worker failed')
         message=str(error) if isinstance(error,(RuntimeError,FileNotFoundError)) else '识别模块启动失败，请检查模型文件与运行依赖，或重新安装完整应用。'
         offer(output,{'type':'error','text':message})
     finally:
         if cap is not None:cap.release()
-        if engine is not None:engine.close()
+        closed=analysis is None or analysis.close()
+        if engine is not None and closed:engine.close()
         output.cancel_join_thread()
+        if preview_output is not None:preview_output.cancel_join_thread()

@@ -1,5 +1,5 @@
 """Media-free observations and conservative, time-based companion feedback."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 import statistics
 import time
@@ -26,11 +26,30 @@ class Observation:
     brow_score: float = 0.0
     eyes_down: float = 0.0
     inference_ms: float = 0.0
+    phone_timestamp: float | None = None
+    face_ms: float = 0.0
+    hand_ms: float = 0.0
+    phone_ms: float = 0.0
+    face_fps: float = 0.0
+    phone_fps: float = 0.0
+    asynchronous: bool = False
+    face_fresh: bool = True
+    phone_fresh: bool = True
+
+    def freshened(self, now):
+        """Never reuse old detections as evidence on a newer preview frame."""
+        if not self.asynchronous:return self
+        face_fresh=self.face_fresh and 0<=now-self.timestamp<=.75
+        phone_fresh=(self.phone_fresh and self.phone_timestamp is not None
+            and 0<=now-self.phone_timestamp<=.9
+            and abs(self.timestamp-self.phone_timestamp)<=.75)
+        return replace(self,face_fresh=face_fresh,phone_fresh=phone_fresh)
 
     @property
     def phone_near_hand(self):
         # Require several hand landmarks next to a phone; a phone on the desk
         # alone is insufficient. This is still a spatial heuristic, not proof.
+        if not self.face_fresh or not self.phone_fresh:return False
         for phone in self.phones:
             margin=min(.055,max(.018,(phone.x2-phone.x1)*.2))
             for hand in self.hands:
@@ -59,12 +78,17 @@ class VisionSettings:
         for key,lo,hi in (('phone_seconds',3,60),('care_seconds',2,30),('cooldown_seconds',30,600)):
             value=data.get(key)
             if isinstance(value,(int,float)) and math.isfinite(value):setattr(result,key,max(lo,min(hi,int(value))))
-        for key,lo,hi in (('brow_threshold',.15,.95),('baseline',0.,1.)):
+        for key,lo,hi in (('brow_threshold',.10,.95),('baseline',0.,1.)):
             value=data.get(key)
             if isinstance(value,(int,float)) and math.isfinite(value):setattr(result,key,max(lo,min(hi,float(value))))
         return result
 
     def as_dict(self):return dict(vars(self))
+
+    @property
+    def recommended_brow_threshold(self):
+        if self.baseline is None:return None
+        return round(max(.10,min(.95,self.baseline+.18)),2)
 
 
 @dataclass(frozen=True)
@@ -132,12 +156,16 @@ class ReminderPolicy:
     def reset_evidence(self):
         self._last=None;self._phone=_Evidence();self._care=_Evidence()
 
+    def cooldown_remaining(self,now):
+        return max(0.,self.settings.cooldown_seconds-(now-self._last_reminder))
+
     def update(self,observation,*,focus_active,pet_visible=True,snoozed=False,phone_paused=False,care_paused=False):
         now=observation.timestamp
         previous=self._last
         # No evidence may bridge paused capture, long inference gaps or clocks
         # from a previous camera session.
-        if previous is not None and (now<=previous or now-previous>2.):
+        max_gap=.75 if observation.asynchronous else 2.
+        if previous is not None and (now<=previous or now-previous>max_gap):
             self.reset_evidence();previous=None
         dt=0. if previous is None else now-previous
         self._last=now
@@ -145,12 +173,10 @@ class ReminderPolicy:
         if snoozed or not pet_visible or (s.focus_only and not focus_active):
             self.reset_evidence();self._last=now;return None
         single_face=len(observation.faces)==1
-        if not single_face:
+        if not single_face or not observation.face_fresh:
             self.reset_evidence();self._last=now;return None
         phone=s.phone_enabled and not phone_paused and single_face and observation.phone_near_hand
-        threshold=s.brow_threshold
-        if s.baseline is not None:threshold=max(threshold,min(.95,s.baseline+.18))
-        care=s.care_enabled and not care_paused and single_face and observation.brow_score>=threshold
+        care=s.care_enabled and not care_paused and single_face and observation.brow_score>=s.brow_threshold
         if phone_paused:self._phone=_Evidence()
         if care_paused:self._care=_Evidence()
         self._phone.update(phone,now,dt);self._care.update(care,now,dt)

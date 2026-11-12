@@ -1,5 +1,6 @@
 """Local CPU vision. Imported in the sensor process, never by the pet painter."""
 from pathlib import Path
+from dataclasses import replace
 import time
 
 import cv2
@@ -55,7 +56,7 @@ class PhoneDetector:
 
 
 class VisionEngine:
-    def __init__(self,model_dir=MODEL_DIR):
+    def __init__(self,model_dir=MODEL_DIR,include_phone=True):
         import mediapipe as mp
         self.mp=mp;self.face=None;self.hand=None;self.phone=None;self.warnings=[]
         cv2.setNumThreads(2)
@@ -64,7 +65,7 @@ class VisionEngine:
         # Read model buffers so MediaPipe can run from Chinese Windows paths.
         base=mp.tasks.BaseOptions;vision=mp.tasks.vision
         try:
-            self.phone=PhoneDetector(model_dir/'phone_yolov8s.onnx')
+            if include_phone:self.phone=PhoneDetector(model_dir/'phone_yolov8s.onnx')
             self.face=vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
                 base_options=base(model_asset_buffer=(model_dir/'face_landmarker.task').read_bytes()),
                 running_mode=vision.RunningMode.VIDEO,num_faces=2,output_face_blendshapes=True,
@@ -79,12 +80,24 @@ class VisionEngine:
 
     def analyze(self,bgr,timestamp=None):
         started=time.monotonic();now=started if timestamp is None else timestamp
+        phones=self.phone.detect(bgr) if self.phone is not None else ()
+        phone_ms=(time.monotonic()-started)*1000
+        rgb,observation=self.analyze_features(bgr,now)
+        return rgb,replace(observation,phones=phones,phone_ms=phone_ms,
+            inference_ms=(time.monotonic()-started)*1000)
+
+    def analyze_features(self,bgr,timestamp=None):
+        """Face and hand tracking never waits for the phone model."""
+        started=time.monotonic();now=started if timestamp is None else timestamp
         stamp=max(self._timestamp+1,int(now*1000));self._timestamp=stamp
-        phones=self.phone.detect(bgr)
         rgb=cv2.cvtColor(bgr,cv2.COLOR_BGR2RGB)
         image=self.mp.Image(image_format=self.mp.ImageFormat.SRGB,data=rgb)
+        face_started=time.monotonic()
         faces=self.face.detect_for_video(image,stamp)
+        face_ms=(time.monotonic()-face_started)*1000
+        hand_started=time.monotonic()
         hands=self.hand.detect_for_video(image,stamp)
+        hand_ms=(time.monotonic()-hand_started)*1000
         face_boxes=[]
         for landmarks in faces.face_landmarks:
             xs=[p.x for p in landmarks];ys=[p.y for p in landmarks]
@@ -95,7 +108,8 @@ class VisionEngine:
             score=(values.get('browDownLeft',0.)+values.get('browDownRight',0.))/2
             down=(values.get('eyeLookDownLeft',0.)+values.get('eyeLookDownRight',0.))/2
         hand_points=tuple(tuple((p.x,p.y) for p in hand) for hand in hands.hand_landmarks)
-        return rgb,Observation(now,phones,hand_points,tuple(face_boxes),score,down,(time.monotonic()-started)*1000)
+        return rgb,Observation(now,(),hand_points,tuple(face_boxes),score,down,
+            (time.monotonic()-started)*1000,face_ms=face_ms,hand_ms=hand_ms)
 
     def close(self):
         for detector in (self.face,self.hand):

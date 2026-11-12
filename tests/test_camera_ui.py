@@ -20,6 +20,7 @@ APP.setStyleSheet(STYLE)
 
 class FakeController(QObject):
     state_changed=Signal(str,str);devices_changed=Signal(object);frame_ready=Signal(object)
+    observation_ready=Signal(object)
     def __init__(self):
         super().__init__();self.state='off';self.starts=[];self.stops=0;self.scans=0
     @property
@@ -47,7 +48,8 @@ class CameraUiTests(unittest.TestCase):
             points=tuple((.48,.6) for _ in range(8))
             o=Observation(i*.25,(Box(.4,.4,.6,.8,.9),) if phone else (),(points,),
                 (Box(.2,.1,.5,.3),),brow)
-            self.controller.frame_ready.emit({'width':16,'height':12,'rgb':bytes(16*12*3),'observation':o})
+            self.controller.observation_ready.emit(o)
+            self.controller.frame_ready.emit({'width':16,'height':12,'rgb':bytes(16*12*3)})
 
     def test_default_is_off_and_device_selection_starts_explicitly(self):
         self.assertEqual(self.controller.starts,[])
@@ -85,11 +87,39 @@ class CameraUiTests(unittest.TestCase):
         self.assertIsNone(self.panel.calibration)
         self.assertAlmostEqual(self.saved[-1]['baseline'],.2)
         self.assertEqual(self.events,[])
+        self.assertAlmostEqual(self.panel.brow.value(),.45)
+        self.assertIn('0.45',self.panel.baseline_label.text())
+        QTest.mouseClick(self.panel.apply_recommended,Qt.MouseButton.LeftButton)
+        self.assertAlmostEqual(self.panel.brow.value(),.38)
+
+    def test_fast_preview_does_not_accumulate_duplicate_detection_evidence(self):
+        self.controller.start(0,700)
+        self.frames(phone=False)
+        for _ in range(120):
+            self.controller.frame_ready.emit({'width':16,'height':12,'rgb':bytes(16*12*3)})
+        self.assertEqual(self.events,[])
+        self.assertEqual(self.panel.policy.phone_duration,0.)
+
+    def test_manual_point_one_threshold_survives_calibration_and_restore(self):
+        self.controller.start(0,700);self.panel.brow.setValue(.10)
+        self.panel.begin_calibration();self.frames(brow=.2,phone=False)
+        settings=VisionSettings.from_dict(self.saved[-1])
+        self.assertEqual(settings.brow_threshold,.10)
+        self.assertEqual(self.panel.settings.brow_threshold,.10)
+        self.assertIn('实际生效阈值：0.10',self.panel.baseline_label.text())
+
+    def test_diagnostics_distinguish_detection_from_hand_relation(self):
+        self.controller.start(0,700)
+        self.controller.observation_ready.emit(Observation(0.,(Box(.4,.4,.6,.8,.9),),faces=(Box(.2,.1,.4,.3),)))
+        self.assertIn('已识别手机，未检测到手部',self.panel.diagnostics.text())
+        self.assertIn('90%',self.panel.details.text())
+        self.panel.focus_only.setChecked(True);self.focus=False;self.panel.update_diagnostics(force=True)
+        self.assertIn('尚未开始专注计时',self.panel.diagnostics.text())
 
     def test_small_panel_keeps_values_readable_and_plus_minus_work(self):
         self.panel.resize(860,620);APP.processEvents()
         for control,step in ((self.panel.phone_duration,1),(self.panel.care_duration,1),
-                             (self.panel.cooldown,1),(self.panel.brow,.05)):
+                             (self.panel.cooldown,1),(self.panel.brow,.01)):
             self.panel.settings_scroll.ensureWidgetVisible(control);APP.processEvents()
             editor=control.lineEdit()
             self.assertGreaterEqual(editor.height(),editor.fontMetrics().height()+4)
@@ -121,7 +151,8 @@ class CompanionVisionTests(unittest.TestCase):
                 for i in range(17):
                     o=Observation(start+i*.25,(Box(.4,.4,.6,.8,.9),),
                         (tuple((.48,.6) for _ in range(8)),),(Box(.2,.1,.5,.3),))
-                    panel.on_frame({'width':16,'height':12,'rgb':bytes(16*12*3),'observation':o})
+                    panel.on_observation(o)
+                    panel.on_frame({'width':16,'height':12,'rgb':bytes(16*12*3)})
             feed(0.)
             self.assertEqual(companion.pet.canvas.mood,'remind')
             self.assertIn('手机',companion.pet.bubble.raw_text)
