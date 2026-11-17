@@ -72,8 +72,9 @@ class ParallelAnalysis:
             frame=self.frames.next(sequence,self.stop)
             if frame is None:continue
             sequence=frame.sequence;started=time.monotonic()
-            phones=self.phone.detect(frame.image)
-            result=(frame.timestamp,phones,(time.monotonic()-started)*1000,rate.tick(started))
+            if hasattr(self.phone,'detect_objects'):phones,persons=self.phone.detect_objects(frame.image)
+            else:phones,persons=self.phone.detect(frame.image),None
+            result=(frame.timestamp,phones,(time.monotonic()-started)*1000,rate.tick(started),persons)
             with self.phone_lock:self.phone_result=result
             self.stop.wait(max(0.,1/3-(time.monotonic()-started)))
 
@@ -88,6 +89,7 @@ class ParallelAnalysis:
             values={'asynchronous':True,'face_fps':rate.tick(started),'phone_fresh':phone is not None}
             if phone is not None:
                 values.update(phone_timestamp=phone[0],phones=phone[1],phone_ms=phone[2],phone_fps=phone[3])
+                if len(phone)>4 and phone[4] is not None:values.update(persons=phone[4],person_fresh=True)
             observation=replace(observation,**values).freshened(time.monotonic())
             observation=tracker.update(observation)
             if not self.stop.is_set():self.emit({'type':'observation','observation':observation})

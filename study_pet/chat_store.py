@@ -10,7 +10,7 @@ from .chat_core import parse_plan
 
 
 class ChatStore:
-    def __init__(self,directory):
+    def __init__(self,directory,*,recover_pending=True):
         self.path=Path(directory)/'chat_history.sqlite3';self.error=''
         self._run(lambda c:c.executescript('''
           CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -20,7 +20,13 @@ class ChatStore:
           CREATE INDEX IF NOT EXISTS turns_conversation ON turns(conversation_id,created_at);
           CREATE TABLE IF NOT EXISTS plans(turn_id TEXT PRIMARY KEY REFERENCES turns(id),data TEXT NOT NULL);
         '''))
-        self._run(lambda c:c.execute("UPDATE turns SET status='stopped',error='上次生成中断' WHERE status='pending'"))
+        def migrate(c):
+            columns={r[1] for r in c.execute('PRAGMA table_info(turns)')}
+            if 'session_id' not in columns:c.execute('ALTER TABLE turns ADD COLUMN session_id TEXT')
+            if 'context_snapshot' not in columns:c.execute("ALTER TABLE turns ADD COLUMN context_snapshot TEXT NOT NULL DEFAULT '{}'")
+            c.execute('CREATE INDEX IF NOT EXISTS turns_session ON turns(session_id,created_at)')
+            if recover_pending:c.execute("UPDATE turns SET status='stopped',error='上次生成中断' WHERE status='pending'")
+        self._run(migrate)
 
     def _run(self,operation,default=None):
         try:
@@ -48,13 +54,23 @@ class ChatStore:
             return [dict(row) for row in reversed(rows)]
         return self._run(read,[])
 
-    def start_turn(self,conversation_id,text,purpose,model):
+    def start_turn(self,conversation_id,text,purpose,model,session_id=None,context_snapshot=None):
         identifier=uuid4().hex;now=stamp(utc_now())
+        context=context_snapshot if isinstance(context_snapshot,dict) else {}
+        context={k:context[k] for k in ('task','state','kind','planned_minutes','remaining_seconds') if k in context}
         def apply(conn):
-            conn.execute('INSERT INTO turns(id,conversation_id,user_text,status,purpose,model,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
-                (identifier,conversation_id,text,'pending',purpose,model,now,now))
+            conn.execute('INSERT INTO turns(id,conversation_id,user_text,status,purpose,model,created_at,updated_at,session_id,context_snapshot) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                (identifier,conversation_id,text,'pending',purpose,model,now,now,str(session_id) if session_id else None,json.dumps(context,ensure_ascii=False)))
             conn.execute('UPDATE conversations SET updated_at=? WHERE id=?',(now,conversation_id));return identifier
         return self._run(apply)
+
+    def related_turns(self,session_id=None,start=None,end=None):
+        clauses=[];args=[]
+        for expression,value in [('session_id=?',session_id),('created_at>=?',start),('created_at<?',end)]:
+            if value is not None:clauses.append(expression);args.append(value)
+        if not clauses:return []
+        return self._run(lambda c:[dict(r) for r in c.execute('SELECT * FROM turns WHERE '+
+            ' AND '.join(clauses)+' ORDER BY created_at,id',args)],[])
 
     def update_turn(self,identifier,answer,status,error=''):
         now=stamp(utc_now())

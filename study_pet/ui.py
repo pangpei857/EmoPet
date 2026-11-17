@@ -1,17 +1,18 @@
 import random
 from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QColor, QFont, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QHBoxLayout,
-    QLabel, QLineEdit, QMenu, QPushButton, QSpinBox, QSystemTrayIcon, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QHBoxLayout,
+    QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSpinBox, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from .pikachu import PetCanvas, pet_icon, ACTION_LABELS
 from .focus import FocusSession, Status
 from .storage import Store
 from .perception import FeedbackEvent,ReminderGate
-from .history import parse
+from .history import parse,local_day
 from .music_core import MusicState,MusicVisibility
 from .music_ui import MusicCard
 from .music_service import MusicController
+from .proactive import ProactiveCoach
 
 
 STYLE = """
@@ -58,7 +59,9 @@ class Bubble(QWidget):
         self.close_button.clicked.connect(self.dismissed)
         self.reminder_id=None;self.reminder_kind=None
         self.actions=QWidget(self);self.action_buttons={}
-        for key,title in [('research','我在查资料'),('false_positive','这次识别错了'),('snooze','稍后提醒')]:
+        for key,title in [('research','我在查资料'),('false_positive','这次识别错了'),('snooze','稍后提醒'),
+                          ('rest_now','休息 5 分钟'),('later','再学 10 分钟'),('dismiss','这次先不用'),
+                          ('help','帮我拆解问题'),('thinking','我在认真思考'),('paper','我在看书写题')]:
             button=QPushButton(title,self.actions);button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda checked=False,k=key:self.respond(k))
             self.action_buttons[key]=button
@@ -71,12 +74,21 @@ class Bubble(QWidget):
     def set_actions(self,reminder=None):
         self.reminder_id,self.reminder_kind=reminder if reminder else (None,None)
         self.actions.setVisible(bool(self.reminder_id))
-        self.action_buttons['research'].setVisible(self.reminder_kind=='phone')
+        visible={key for row in self.action_rows() for key in row}
+        for key,button in self.action_buttons.items():button.setVisible(key in visible)
+
+    def action_rows(self):
+        if self.reminder_kind=='break_due':return [('rest_now',),('later','dismiss')]
+        if self.reminder_kind=='care':return [('help','thinking'),('false_positive','snooze')]
+        if self.reminder_kind=='head_down':return [('paper',),('false_positive','snooze')]
+        if self.reminder_kind=='phone':return [('research',),('false_positive','snooze')]
+        return [('false_positive','snooze')]
 
     def actions_height(self):
         if not self.reminder_id:return 0
         row=max(26,round(29*self.factor))
-        return row*2+5 if self.reminder_kind=='phone' else row
+        count=len(self.action_rows())
+        return row*count+5*(count-1)
 
     def set_message(self,text):
         self.raw_text=str(text).strip()[:2000]
@@ -118,11 +130,13 @@ class Bubble(QWidget):
         self.label.setGeometry(pad,header,self.width()-2*pad,max(1,self.height()-header-23-extra))
         self.actions.setGeometry(pad,self.height()-18-self.actions_height(),self.width()-2*pad,self.actions_height())
         row=max(26,round(29*self.factor));half=(self.actions.width()-5)//2
-        if self.reminder_kind=='phone':
-            self.action_buttons['research'].setGeometry(0,0,self.actions.width(),row)
-        y=row+5 if self.reminder_kind=='phone' else 0
-        self.action_buttons['false_positive'].setGeometry(0,y,half,row)
-        self.action_buttons['snooze'].setGeometry(half+5,y,self.actions.width()-half-5,row)
+        for button in self.action_buttons.values():button.setGeometry(0,0,self.actions.width(),row)
+        for index,keys in enumerate(self.action_rows()):
+            y=index*(row+5)
+            if len(keys)==1:self.action_buttons[keys[0]].setGeometry(0,y,self.actions.width(),row)
+            else:
+                self.action_buttons[keys[0]].setGeometry(0,y,half,row)
+                self.action_buttons[keys[1]].setGeometry(half+5,y,self.actions.width()-half-5,row)
         side=max(24,round(21*self.factor))
         self.close_button.setGeometry(self.width()-side-4,4,side,side)
 
@@ -364,7 +378,13 @@ class FocusPanel(QWidget):
         super().__init__()
         self.setObjectName("panel");self.setWindowTitle("雨衣皮卡丘 · 学习面板")
         self.setWindowIcon(pet_icon());self.setFixedWidth(430)
-        outer=QVBoxLayout(self);outer.setContentsMargins(30,25,30,22);outer.setSpacing(14)
+        content=QWidget();content.setObjectName('panel')
+        outer=QVBoxLayout(content);outer.setContentsMargins(24,25,24,22);outer.setSpacing(14)
+        container=QVBoxLayout(self);container.setContentsMargins(0,0,0,0)
+        self.scroll=QScrollArea();self.scroll.setWidgetResizable(True);self.scroll.setWidget(content)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setStyleSheet('QScrollArea{border:0;background:#FBF9F0;}')
+        container.addWidget(self.scroll)
         header=QHBoxLayout()
         icon=QLabel();icon.setPixmap(pet_icon().pixmap(QSize(52,52)));header.addWidget(icon)
         title_col=QVBoxLayout();title_col.setSpacing(1)
@@ -407,6 +427,14 @@ class FocusPanel(QWidget):
         self.rest=QPushButton("休息 5 分钟");self.rest.setObjectName("textButton");self.rest.clicked.connect(self.rest_requested)
         self.cheer=QPushButton("给我一点鼓励");self.cheer.setObjectName("textButton");self.cheer.clicked.connect(self.encourage)
         links.addWidget(self.rest);links.addWidget(self.cheer);outer.addLayout(links)
+        coach_row=QHBoxLayout()
+        self.care_enabled=QCheckBox('主动关怀');self.care_enabled.setChecked(True)
+        self.care_enabled.setToolTip('开关自动休息、眉部、低头和手机关怀；摄像头与行为记录由视觉窗口单独控制。')
+        self.care_interval=QSpinBox();self.care_interval.setRange(15,120);self.care_interval.setSingleStep(5)
+        self.care_interval.setValue(60);self.care_interval.setSuffix(' 分钟后提醒休息')
+        coach_row.addWidget(self.care_enabled);coach_row.addWidget(self.care_interval,1);outer.addLayout(coach_row)
+        self.care_status=QLabel('连续学习从本次打开助手开始累计。');self.care_status.setObjectName('muted')
+        self.care_status.setWordWrap(True);outer.addWidget(self.care_status)
         actions=QHBoxLayout();actions.setSpacing(7);self.action_buttons={}
         for key,label in [("idle","待机"),("care","关心我"),("remind","提醒我"),("encourage","为我加油")]:
             button=QPushButton(label);button.setToolTip(f"让皮卡丘做出{ACTION_LABELS[key]}动作")
@@ -417,7 +445,9 @@ class FocusPanel(QWidget):
         outer.addWidget(self.summary)
         tip=QLabel("摸头或戳肚子 · 拖动移动 · 滚轮缩放");tip.setObjectName("muted")
         tip.setAlignment(Qt.AlignmentFlag.AlignCenter);outer.addWidget(tip)
-        self.adjustSize()
+        content.adjustSize()
+        available=QApplication.primaryScreen().availableGeometry().height()
+        self.resize(430,min(content.sizeHint().height()+2,max(400,available-40)))
 
     def sync_duration(self, minutes):
         self.duration_group.setExclusive(False)
@@ -433,11 +463,19 @@ class Companion:
     def __init__(self, store: Store, tray_enabled=True,music_autostart=None):
         self.store=store;self.session=FocusSession();self._accounted=False
         self.history=store.history;self.history.recover_incomplete();self.history_panel=None
+        from .summary_service import SummaryService
+        self.summary_service=SummaryService(store)
         self._history_id=None;self._history_saved_elapsed=0.;self._last_checkpoint=-float('inf')
         self.reminder_gate=ReminderGate()
+        self.coach=ProactiveCoach(store.get('proactive',{}),clock=lambda:self.session.clock())
+        self._suspended_focus=None;self._presence_text='摄像头未观测'
         self.vision_controller=None;self.camera_panel=None
         self.chat_panel=None
         self.pet=PetWindow();self.panel=FocusPanel()
+        self.panel.care_enabled.setChecked(self.coach.as_dict().get('enabled',True))
+        self.panel.care_interval.setValue(self.coach.as_dict().get('interval_minutes',60))
+        self.panel.care_enabled.toggled.connect(self.save_coach_settings)
+        self.panel.care_interval.valueChanged.connect(self.save_coach_settings)
         self.music_enabled=bool(store.get('music_enabled',True))
         self.music_controller=MusicController(self.pet)
         self.music_controller.state_changed.connect(self.on_music_state)
@@ -492,6 +530,7 @@ class Companion:
             else:self.pet.move(screen.right()-self.pet.width()-38,screen.bottom()-self.pet.height()-18)
         else:self.pet.move(screen.right()-self.pet.width()-38,screen.bottom()-self.pet.height()-18)
         self.timer=QTimer(self.pet);self.timer.timeout.connect(self.on_tick);self.timer.start(200)
+        QApplication.instance().aboutToQuit.connect(self.summary_service.shutdown)
         self.pet.show();self.feedback("摸摸头或戳戳肚子，\n双击打开面板，右键还有更多。","idle")
         self.refresh()
         if self.music_enabled and (tray_enabled if music_autostart is None else music_autostart):
@@ -501,6 +540,32 @@ class Companion:
         if self.pet.isVisible():self.pet.say(text,mood)
         if notify and self.tray:
             self.tray.showMessage("皮卡丘",text,QSystemTrayIcon.MessageIcon.Information,8000)
+
+    def save_coach_settings(self,*args):
+        self.coach.configure(enabled=self.panel.care_enabled.isChecked(),interval_minutes=self.panel.care_interval.value())
+        self.store.save(proactive=self.coach.as_dict())
+        self.refresh()
+
+    def update_coach(self,notify=True):
+        s=self.session
+        event=self.coach.update(focus_active=s.kind=='focus' and s.status==Status.RUNNING and s.remaining>0,
+            rest_active=s.kind=='break' and s.status==Status.RUNNING,
+            enabled=notify and self.panel.care_enabled.isChecked(),
+            visible=self.pet.isVisible() and self.pet.bubbles_enabled,snoozed=self.reminder_gate.snoozed,
+            now=s.clock())
+        if event:self.present_reminder(event,'coach')
+        return event
+
+    def route_vision_event(self,event):
+        self.update_coach()
+        chosen=self.coach.choose(event,now=self.session.clock(),
+            enabled=self.panel.care_enabled.isChecked(),visible=self.pet.isVisible() and self.pet.bubbles_enabled,
+            snoozed=self.reminder_gate.snoozed)
+        delivered=None
+        if chosen:
+            delivered=self.present_reminder(chosen,'coach') if chosen.kind=='break_due' else self.receive_vision_event(chosen)
+        if self.camera_panel is not None:self.camera_panel.reminder_result(event,bool(delivered and chosen is event))
+        return delivered
 
     def create_menu(self):
         menu=QMenu(self.pet)
@@ -616,6 +681,7 @@ class Companion:
             from .camera_ui import CameraPanel
             from .perception import VisionSettings
             self.vision_controller=VisionController(self.pet)
+            self.vision_controller.state_changed.connect(self.receive_camera_state)
             QApplication.instance().aboutToQuit.connect(self.vision_controller.shutdown)
             self.camera_panel=CameraPanel(self.vision_controller,
                 VisionSettings.from_dict(self.store.get('vision',{})),
@@ -623,7 +689,9 @@ class Companion:
                                 self.pet.isVisible()),gate=self.reminder_gate)
             self.camera_panel.setWindowIcon(pet_icon())
             self.camera_panel.settings_changed.connect(lambda settings:self.store.save(vision=settings))
-            self.camera_panel.feedback_requested.connect(self.receive_vision_event)
+            self.camera_panel.feedback_requested.connect(self.route_vision_event)
+            self.camera_panel.behavior_ready.connect(self.receive_behavior)
+            self.camera_panel.presence_changed.connect(self.receive_presence)
             self.camera_panel.mirror.setChecked(bool(self.store.get('vision_mirror',True)))
             self.camera_panel.mirror.toggled.connect(lambda value:self.store.save(vision_mirror=value))
             self.camera_panel.scan()
@@ -635,7 +703,8 @@ class Companion:
     def show_history(self):
         if self.history_panel is None:
             from .history_ui import HistoryPanel
-            self.history_panel=HistoryPanel(self.history,lambda:self.checkpoint_round(force=True),self.can_control_reminder)
+            self.history_panel=HistoryPanel(self.history,lambda:self.checkpoint_round(force=True),self.can_control_reminder,
+                store=self.store,summary_service=self.summary_service)
             self.history_panel.setWindowIcon(pet_icon())
             self.history_panel.response_requested.connect(self.respond_to_reminder)
             self.history_panel.sample_requested.connect(self.send_sample)
@@ -648,7 +717,8 @@ class Companion:
     def chat_context(self):
         s=self.session;active=s.status in {Status.RUNNING,Status.PAUSED}
         states={Status.IDLE:'未开始',Status.RUNNING:'进行中',Status.PAUSED:'已暂停',Status.COMPLETED:'已完成'}
-        return {'task':s.task if active else self.panel.task.text().strip(),
+        return {'session_id':s.round_id if active and s.kind=='focus' else None,
+            'task':s.task if active else self.panel.task.text().strip(),
             'state':states[s.status],'kind':s.kind if active else 'focus',
             'planned_minutes':s.duration//60 if active else self.panel.duration.value(),
             'remaining_seconds':s.display_seconds if active else 0}
@@ -668,7 +738,7 @@ class Companion:
         self.chat_panel.showNormal();self.chat_panel.raise_();self.chat_panel.activateWindow()
 
     def apply_chat_task(self,title,minutes):
-        if self.session.status in {Status.RUNNING,Status.PAUSED}:
+        if self._suspended_focus is not None or self.session.status in {Status.RUNNING,Status.PAUSED}:
             if self.chat_panel:self.chat_panel.status.setText('请先完成或结束当前一轮，再选择下一项任务。')
             return False
         if self.session.status==Status.COMPLETED:
@@ -691,10 +761,38 @@ class Companion:
         value=self.history.checkpoint(s.round_id,s.elapsed,state,s.pause_count,now=s.wall_clock())
         if value is not None:
             self._history_id=s.round_id;self._history_saved_elapsed=value;self._last_checkpoint=now
+            return True
+        return False
+
+    def flush_vision_behaviors(self):
+        if self.camera_panel is not None:
+            # Qt delivers these signals synchronously. Pin the finishing round
+            # while its final segments are closed, even after tick() completed.
+            self._behavior_target=self.session.round_id if self.session.kind=='focus' else None
+            try:self.camera_panel.flush_behaviors()
+            finally:self._behavior_target=None
+
+    def reset_vision_behaviors(self):
+        if self.camera_panel is not None:
+            self.camera_panel.reset_behaviors();self.camera_panel.policy.reset_evidence()
 
     def receive_vision_event(self,event):
-        if not self.pet.isVisible() or event.kind not in {'phone','care'}:return None
+        if not self.pet.isVisible() or event.kind not in {'phone','care','head_down'}:return None
         return self.present_reminder(event,'vision')
+
+    def receive_behavior(self,event):
+        s=self.session
+        target=getattr(self,'_behavior_target',None)
+        if target is None and (s.kind!='focus' or s.status not in {Status.RUNNING,Status.PAUSED}):return None
+        self.checkpoint_round(force=True)
+        return self.history.upsert_behavior(target or s.round_id,event)
+
+    def receive_presence(self,state):
+        labels={'present':'在位','away':'已离位','unknown':'在位情况无法判断'}
+        self._presence_text=state.get('text') or labels.get(state.get('state'),'在位情况无法判断') if isinstance(state,dict) else str(state)
+
+    def receive_camera_state(self,state,text):
+        if state!='running':self._presence_text='摄像头无法判断' if state=='error' else '摄像头未观测'
 
     def send_sample(self,kind='phone'):
         examples={'phone':FeedbackEvent('phone','这是一条手机提醒示例。\n试着告诉我：正在查资料、识别错了，或稍后提醒。','remind'),
@@ -705,9 +803,10 @@ class Companion:
 
     def present_reminder(self,event,source):
         linked=None
-        if source=='vision' and self.session.kind=='focus' and self.session.status in {Status.RUNNING,Status.PAUSED}:
+        if source in {'vision','coach'} and self.session.kind=='focus' and self.session.status in {Status.RUNNING,Status.PAUSED}:
             self.checkpoint_round(force=True);linked=self.session.round_id
-        event_id=self.history.add_reminder(event.kind,event.text,source,linked)
+        event_id=self.history.add_reminder(event.kind,event.text,source,linked,behavior_id=getattr(event,'behavior_id',None))
+        self.pet.bubble.action_buttons['rest_now'].setText(f"休息 {self.coach.as_dict()['rest_minutes']} 分钟")
         self.pet.say(event.text,event.mood,20000,reminder=(event_id,event.kind) if event_id else None)
         if self.history_panel is not None and self.history_panel.isVisible():self.history_panel.refresh_data()
         if source=='example' and not self.pet.bubbles_enabled:
@@ -724,26 +823,45 @@ class Companion:
 
     def respond_to_reminder(self,event_id,response):
         event=self.history.reminder(event_id)
-        if not event or (response=='research' and event['kind']!='phone'):return False
+        if not event:return False
+        allowed={'phone':{'research','false_positive','snooze'},
+            'care':{'help','thinking','false_positive','snooze'},
+            'head_down':{'paper','false_positive','snooze'},
+            'break_due':{'rest_now','later','dismiss'}}
+        if response not in allowed.get(event['kind'],set()):return False
         controls=self.can_control_reminder(event)
         if response!='false_positive' and not controls:return False
         if not self.history.respond(event_id,response):return False
         if event['source']=='example':message='示例回应已记录。\n真实提醒设置保持不变。'
         else:
             if controls:self.reminder_gate.apply(response,event['kind'])
-            if response=='research':message='好呀，安心查资料。\n手机提醒暂停5分钟，关怀继续保留。'
+            if response=='rest_now':
+                self.rest();message=f"先休息 {self.coach.as_dict()['rest_minutes']} 分钟。\n刚才的任务和剩余时间已经保留。"
+            elif response in {'later','dismiss'}:
+                self.coach.defer(600 if response=='later' else 1800,now=self.session.clock())
+                message='好，十分钟后再问你。' if response=='later' else '好的，接下来半小时不再询问休息。'
+            elif response=='help':
+                self.show_chat();self.chat_panel.prepare_prompt('我正在学习“'+self.session.task+'”。我有一个地方没弄懂，请先问我具体卡在哪里，再帮助我分析。','chat')
+                message='学习对话已经打开。\n告诉我卡在哪里，我们一起拆解。'
+            elif response=='thinking':message='好的，安心思考。\n这段眉部变化会标记为正在思考。'
+            elif response=='paper':message='明白，你在看书写题。\n这段低头会标记为学习用途。'
+            elif response=='research':message='好呀，安心查资料。\n手机提醒暂停5分钟，关怀继续保留。'
             elif response=='snooze':message='好的，接下来10分钟\n我会暂停视觉提醒。'
             elif controls:message='已记下这次误报。\n1分钟内不重复这类提醒。'
             else:message='已补记这次误报。\n谢谢你的反馈。'
         if self.camera_panel is not None and event['source']=='vision' and controls:
             self.camera_panel.policy.reset_evidence();self.camera_panel.update_reminder_controls()
             self.camera_panel.notice.setText(message.replace('\n',' '))
+        if event.get('session_id'):
+            row=self.history.session(event['session_id'])
+            if row and row['status'] not in {'running','paused'}:self.summary_service.ensure_session(row['id'])
         if self.pet.isVisible():self.pet.say(message,'care')
         if self.history_panel is not None:
             self.history_panel.refresh_data();self.history_panel.message.setText(message.replace('\n',' '))
         return True
 
     def shutdown_vision(self):
+        self.flush_vision_behaviors()
         if self.vision_controller is not None:self.vision_controller.shutdown()
         if self.camera_panel is not None:self.camera_panel.preview.clear()
 
@@ -753,21 +871,32 @@ class Companion:
 
     def account(self,reason='stopped'):
         if not self._accounted and self.session.status!=Status.IDLE:
-            self.checkpoint_round(force=True,status='completed' if self.session.status==Status.COMPLETED else reason)
+            self.flush_vision_behaviors()
+            if not self.checkpoint_round(force=True,status='completed' if self.session.status==Status.COMPLETED else reason):return
             self._accounted=True
+            if self.session.kind=='focus':
+                self.summary_service.ensure_session(self.session.round_id)
+                for day in {local_day(self.session.started_at),local_day(self.session.wall_clock())}:
+                    self.summary_service.refresh_daily(day)
 
     def begin(self,kind="focus"):
+        if self._suspended_focus is not None and kind=='focus':
+            self.resume_focus();return
+        self.update_coach(notify=False)
         self.account('replaced')
-        minutes=5 if kind=="break" else self.panel.duration.value()
-        self.session.start(minutes,self.panel.task.text(),kind)
+        self.reset_vision_behaviors()
+        minutes=self.coach.as_dict()['rest_minutes'] if kind=="break" else self.panel.duration.value()
+        self.session.start(minutes,'休息一下' if kind=='break' else self.panel.task.text(),kind)
         self._accounted=False
         self._history_saved_elapsed=0.;self._last_checkpoint=-float('inf')
         self.reminder_gate.reset_round();self.checkpoint_round(force=True)
         self.store.save(minutes=self.panel.duration.value(),task=self.panel.task.text())
-        self.feedback("先放松一下，五分钟后我叫你。" if kind=="break" else "皮卡！开始啦。\n你专心，我陪你。", "rest" if kind=="break" else "encourage")
+        self.feedback(f"先放松一下，{minutes}分钟后我叫你。" if kind=="break" else "皮卡！开始啦。\n你专心，我陪你。", "rest" if kind=="break" else "encourage")
+        self.update_coach(notify=False)
         self.refresh()
 
     def toggle(self):
+        self.update_coach(notify=False)
         # Complete expired rounds before acting on a possibly delayed UI callback.
         if self.session.tick():
             self.completed()
@@ -775,28 +904,67 @@ class Companion:
         if self.session.status in {Status.IDLE,Status.COMPLETED}:
             self.begin()
         elif self.session.status==Status.RUNNING:
-            self.session.pause();self.checkpoint_round(force=True);self.feedback("先停一会儿也没关系。\n准备好再继续。","care")
+            self.flush_vision_behaviors()
+            self.session.pause()
+            if self.session.status==Status.COMPLETED:
+                self.completed();return
+            self.checkpoint_round(force=True);self.feedback("先停一会儿也没关系。\n准备好再继续。","care")
+            self.reset_vision_behaviors()
         else:
             self.session.resume();self.checkpoint_round(force=True);self.feedback("欢迎回来，继续一起加油。")
+        self.update_coach(notify=False)
         self.refresh()
 
     def stop(self):
+        self.update_coach(notify=False)
         if self.session.tick():self.completed()
         if self.session.status==Status.IDLE:return
+        if self.session.kind=='break' and self._suspended_focus is not None:
+            self.account();self.resume_focus(resume=False)
+            self.feedback('休息已结束，原任务保持暂停。\n准备好后点击“继续学习”。','care');return
         self.account();self.session.reset();self.reminder_gate.reset_round()
+        self.reset_vision_behaviors();self.update_coach(notify=False)
         self.feedback("这一段辛苦啦。\n想继续时，再来找我。","care");self.refresh()
 
     def rest(self):
-        if self.session.status in {Status.RUNNING,Status.PAUSED}:return
+        self.update_coach(notify=False)
+        s=self.session
+        if s.kind=='break' and s.status in {Status.RUNNING,Status.PAUSED}:return
+        if s.kind=='focus' and s.status in {Status.RUNNING,Status.PAUSED}:
+            if s.tick():self.completed()
+            else:
+                self.flush_vision_behaviors();s.pause()
+                if s.status==Status.COMPLETED:self.completed()
+                else:
+                    self.checkpoint_round(force=True)
+                    self._suspended_focus=s
+                    self.session=FocusSession(clock=s.clock,wall_clock=s.wall_clock)
+                    self._accounted=False
         self.begin("break")
+
+    def resume_focus(self,resume=True):
+        if self._suspended_focus is None:return False
+        self.update_coach(notify=False);self.account()
+        self.session=self._suspended_focus;self._suspended_focus=None
+        self._accounted=False;self._history_id=None;self._last_checkpoint=-float('inf')
+        self._history_saved_elapsed=self.session.elapsed
+        self.reset_vision_behaviors()
+        if resume:self.session.resume()
+        self.checkpoint_round(force=True);self.update_coach(notify=False)
+        self.feedback('欢迎回来，继续刚才的任务。' if resume else '原来的任务已保留，准备好了再继续。','encourage' if resume else 'care')
+        self.refresh();return True
 
     def completed(self):
         self.account()
-        if self.session.kind=="break":self.feedback("休息结束啦。\n准备好开始下一轮了吗？","remind",notify=True)
+        self.reset_vision_behaviors()
+        if self.session.kind=="break":
+            if self.session.elapsed>=self.coach.as_dict()['rest_minutes']*60:self.coach.reset_after_rest()
+            self.feedback("休息结束啦。\n准备好继续刚才的任务吗？" if self._suspended_focus else "休息结束啦。\n准备好开始下一轮了吗？","remind",notify=True)
         else:self.feedback("这一轮完成啦，辛苦了！\n伸个懒腰，休息一下吧。","remind",notify=True)
         self.refresh()
 
     def on_tick(self):
+        self.update_coach()
         if self.session.tick() or (self.session.status==Status.COMPLETED and not self._accounted):
             self.completed()
         self.checkpoint_round()
@@ -809,21 +977,25 @@ class Companion:
     def refresh(self):
         s=self.session;p=self.panel
         active=s.status in {Status.RUNNING,Status.PAUSED}
-        p.task.setEnabled(not active);p.duration.setEnabled(not active)
-        for b in p.choices:b.setEnabled(not active)
-        p.stop.setEnabled(s.status!=Status.IDLE);p.rest.setEnabled(not active)
+        editable=not active and self._suspended_focus is None
+        p.task.setEnabled(editable);p.duration.setEnabled(editable)
+        for b in p.choices:b.setEnabled(editable)
+        p.stop.setEnabled(s.status!=Status.IDLE)
+        p.stop.setText('结束休息' if s.kind=='break' and self._suspended_focus else '结束本轮')
+        p.rest.setText(f"休息 {self.coach.as_dict()['rest_minutes']} 分钟")
+        p.rest.setEnabled(s.kind!='break' or not active)
         seconds=s.display_seconds if s.status!=Status.IDLE else p.duration.value()*60
         p.clock.seconds=seconds;p.clock.progress=s.progress if s.status!=Status.IDLE else 0
         if s.status==Status.IDLE:
             caption="准备好了就开始";button="开始专注";badge="开始专注";task="一次只做一件事，我陪着你。"
         elif s.status==Status.COMPLETED:
-            caption="这一轮完成啦";button="再学一轮";badge="完成啦 · 休息一下";task=s.task
+            caption="这一轮完成啦";button="继续原任务" if self._suspended_focus else "再学一轮";badge="完成啦 · 休息一下";task=s.task
         else:
             paused=s.status==Status.PAUSED
             caption="已暂停" if paused else ("好好休息一下" if s.kind=="break" else "正在专注")
             button="继续" if paused else "暂停一下"
             badge=f"{'已暂停' if paused else ('休息中' if s.kind=='break' else '专注中')} · {seconds//60:02d}:{seconds%60:02d}"
-            task=s.task
+            task='休息后继续：'+self._suspended_focus.task if self._suspended_focus else s.task
         p.clock.caption=caption;p.clock.update();p.start.setText(button)
         p.active_task.setText(task);self.pet.badge.setText(badge)
         self.pet.base_mood="rest" if s.kind=="break" and active else "idle"
@@ -832,14 +1004,19 @@ class Companion:
         pending=max(0,int(s.elapsed)-int(self._history_saved_elapsed)) if active and s.kind=='focus' and not self._accounted else 0
         now_seconds=stats['seconds']+pending
         p.summary.setText(f"今天已专注 {now_seconds//60} 分钟 · 完成 {stats['completed']} 轮")
+        p.care_status.setText(f'距上次完整休息已累计学习 {int(self.coach.streak_seconds)//60} 分钟 · {self._presence_text}')
 
     def quit(self):
+        self.update_coach(notify=False)
         if self.session.tick():self.account()
         self.account('exited');self.save_position()
+        if self._suspended_focus is not None:
+            self.session=self._suspended_focus;self._suspended_focus=None;self._accounted=False;self.account('exited')
         self.store.save(minutes=self.panel.duration.value(),task=self.panel.task.text())
         if self.tray:self.tray.hide()
         self.shutdown_vision()
         self.shutdown_chat()
         self.shutdown_music()
+        self.summary_service.shutdown()
         if self.history_panel is not None:self.history_panel.hide()
         QApplication.quit()

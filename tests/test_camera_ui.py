@@ -163,6 +163,47 @@ class CameraUiTests(unittest.TestCase):
             control.setValue(control.minimum());self.assertFalse(control.minus_button.isEnabled())
         self.assertTrue(self.panel.settings_scroll.verticalScrollBar().isVisible())
 
+    def calibrated_frames(self,start,seconds,score=.1,pitch=8.,phone=False):
+        for index in range(round(seconds*4)+1):
+            face=Box(.2,.1,.5,.4)
+            feature=FaceFeatures(face,(('browDownLeft',score),('browDownRight',score)),
+                yaw=43.,pitch=pitch,brow_geometry=.3)
+            o=Observation(start+index*.25,phones=(Box(.4,.4,.6,.8,.9),) if phone else (),
+                hands=(tuple((.48,.6) for _ in range(8)),) if phone else (),faces=(face,),
+                brow_score=score,face_features=(feature,),primary_face=0,primary_id=1,face_state='single')
+            self.controller.observation_ready.emit(o)
+
+    def test_two_step_side_view_calibration_applies_personal_action_threshold(self):
+        self.controller.start(0,700);self.panel.begin_calibration()
+        self.calibrated_frames(0.,3.5,score=.1)
+        self.assertEqual(self.panel.settings.neutral_yaw,43.)
+        self.assertEqual(self.panel.settings.neutral_pitch,8.)
+        self.panel.begin_frown_calibration();self.calibrated_frames(4.,3.5,score=.7)
+        self.assertIsNone(self.panel.calibration)
+        self.assertAlmostEqual(self.panel.settings.frown_baseline,.7)
+        self.assertAlmostEqual(self.panel.settings.brow_threshold,.4)
+        self.assertIn('已应用',self.panel.notice.text())
+
+    def test_recording_disabled_keeps_head_care_but_does_not_emit_storage_records(self):
+        self.controller.start(0,700)
+        self.panel.settings.neutral_yaw=43.;self.panel.settings.neutral_pitch=8.
+        self.panel.settings.head_seconds=10;self.panel.learning_mode.setCurrentIndex(0)
+        self.panel.record.setChecked(False)
+        records=[];self.panel.behavior_ready.connect(records.append)
+        self.calibrated_frames(0.,12.,pitch=33.)
+        self.assertEqual([event.kind for event in self.events],['head_down'])
+        self.assertIsNone(self.events[0].behavior_id)
+        self.assertEqual(records,[])
+
+    def test_reenabling_records_does_not_backfill_disabled_time(self):
+        self.controller.start(0,700);self.panel.record.setChecked(False)
+        self.calibrated_frames(0.,8.,phone=True)
+        records=[];self.panel.behavior_ready.connect(records.append)
+        self.panel.record.setChecked(True);self.calibrated_frames(8.25,4.,phone=True)
+        phones=[event for event in records if event['type']=='phone']
+        self.assertTrue(phones)
+        self.assertLessEqual(max(event['duration'] for event in phones),4.)
+
 
 class CompanionVisionTests(unittest.TestCase):
     def test_stable_observations_reach_pet_and_hidden_pet_stays_hidden(self):

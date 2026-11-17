@@ -87,7 +87,7 @@ def request_body(config,messages,*,purpose='chat',probe=False):
     body={'model':config.model.strip(),'messages':messages,'stream':not probe,
           'max_tokens':16 if probe else 8192 if config.thinking else 4096,
           'thinking':{'type':'enabled' if config.thinking and not probe else 'disabled'}}
-    if purpose=='plan' and not probe:body['response_format']={'type':'json_object'}
+    if purpose in {'plan','summary'} and not probe:body['response_format']={'type':'json_object'}
     return body
 
 

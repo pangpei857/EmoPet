@@ -69,6 +69,7 @@ def main():
     parser.add_argument('--companion-smoke-test',action='store_true')
     parser.add_argument('--chat-smoke-test',action='store_true')
     parser.add_argument('--music-smoke-test',action='store_true')
+    parser.add_argument('--upgrade-smoke-test',action='store_true',help='Verify proactive rest, behavior records and study summaries in an isolated profile')
     parser.add_argument('--open-chat',action='store_true',help='Open the DeepSeek chat panel')
     parser.add_argument('--vision-fixtures',type=Path)
     parser.add_argument("--preview-path",type=Path)
@@ -82,7 +83,7 @@ def main():
     app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(app_font)
     app.setWindowIcon(pet_icon())
-    testing=args.smoke_test or args.vision_smoke_test or args.companion_smoke_test or args.chat_smoke_test or args.music_smoke_test
+    testing=args.smoke_test or args.vision_smoke_test or args.companion_smoke_test or args.chat_smoke_test or args.music_smoke_test or args.upgrade_smoke_test
     temporary=tempfile.TemporaryDirectory(prefix="momo-smoke-") if testing else None
     directory=Path(temporary.name) if temporary else (args.profile_dir.resolve() if args.profile_dir else Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)))
     directory.mkdir(parents=True,exist_ok=True)
@@ -120,7 +121,10 @@ def main():
         result={"code":0}
         def run_test():
             try:
-                if args.music_smoke_test:
+                if args.upgrade_smoke_test:
+                    from study_pet.upgrade_smoke import run
+                    run(companion,args.preview_path)
+                elif args.music_smoke_test:
                     from study_pet.music_smoke import run
                     run(companion,args.preview_path)
                 elif args.chat_smoke_test:

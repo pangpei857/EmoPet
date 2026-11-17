@@ -190,11 +190,13 @@ class ChatPanel(QWidget):
         try:
             self.config.validate();key=self.vault.load(self.config.base_url)
             if not key:self.tabs.setCurrentIndex(2);self.status.setText(self.vault.error or '请在这里填写并保存DeepSeek API Key。');return False
-            messages=build_messages(self._turns,text,self.context() if self.context_check.isChecked() else None,purpose)
+            local_context=dict(self.context())
+            messages=build_messages(self._turns,text,local_context if self.context_check.isChecked() else None,purpose)
         except ValueError as error:self.status.setText(str(error));return False
         if not self.conversation_id:self.conversation_id=self.chats.new_conversation(text)
         if not self.conversation_id:self.status.setText(self.chats.error);return False
-        identifier=self.chats.start_turn(self.conversation_id,text,purpose,self.config.model)
+        identifier=self.chats.start_turn(self.conversation_id,text,purpose,self.config.model,
+            session_id=local_context.get('session_id'),context_snapshot=local_context)
         if not identifier:self.status.setText(self.chats.error);return False
         self._turn_id=identifier;self._answer='';self._purpose=purpose;self._testing=False
         self._turns=self.chats.turns(self.conversation_id)
