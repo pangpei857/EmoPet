@@ -60,6 +60,7 @@ class PipelineTests(unittest.TestCase):
         person = Box(.2,.15,.8,.88,.94)
         pose = tuple((.5,.5,.9) for _ in range(17))
         image = object()
+        original = object()
         estimator = Mock()
         estimator.estimate.return_value = pose
         for people in ((person,), (person, person)):
@@ -69,14 +70,16 @@ class PipelineTests(unittest.TestCase):
                 stop = Mock()
                 stop.is_set.side_effect = (False, False, True) if len(people)==1 else (False, True)
                 frames = Mock()
-                frames.next.return_value = CapturedFrame(1,10.,image)
+                frames.next.return_value = CapturedFrame(1,10.,image,original if len(people)==1 else None)
                 estimator.reset_mock()
                 pipeline = ParallelAnalysis(frames,None,detector,stop,Mock(),body=estimator)
                 pipeline.phone_loop()
                 if len(people) == 1:
+                    detector.detect_objects.assert_called_once_with(image,original_image=original)
                     estimator.estimate.assert_called_once_with(image,person)
                     self.assertEqual(pipeline.phone_result[5],pose)
                 else:
+                    detector.detect_objects.assert_called_once_with(image)
                     estimator.estimate.assert_not_called()
                     self.assertEqual(pipeline.phone_result[5],())
         observation = Observation(10.1,phone_timestamp=10.,asynchronous=True,

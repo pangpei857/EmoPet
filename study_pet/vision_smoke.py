@@ -16,7 +16,7 @@ def run(companion,preview=None,fixtures=None,model_profile=DEFAULT_VISION_PROFIL
 
     profile=VISION_PROFILES[model_profile]
     results=[];portrait=None;phone_image=None
-    with VisionEngine(detector_file=profile.detector_file) as engine:
+    with VisionEngine(detector_file=profile.detector_file,slice_phones=profile.slice_phones) as engine:
         rgb,empty=engine.analyze(np.zeros((480,640,3),dtype=np.uint8))
         assert not empty.phones and not empty.faces
         if fixtures:

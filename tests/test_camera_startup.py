@@ -2,12 +2,13 @@ from queue import Queue
 from threading import Event
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import numpy as np
 from PySide6.QtWidgets import QApplication
 
 from study_pet.camera import VisionController
-from study_pet.vision_worker import camera_choices
+from study_pet.vision_worker import camera_choices, capture_loop
 
 
 APP = QApplication.instance() or QApplication([])
@@ -120,3 +121,22 @@ class CameraStartupTests(unittest.TestCase):
             device(7, 1400, 'B', 'two'), device(4, 1400, 'A', 'two'),
         ])
         self.assertEqual([item['alternatives'] for item in choices], [[(4, 1400)], [(7, 1400)]])
+
+    def test_hd_capture_keeps_original_pixels_for_sliced_detection(self):
+        original = np.zeros((960, 1280, 3), dtype=np.uint8)
+        for profile in ('yolov8s', 'yolo26_rtmpose'):
+            with self.subTest(profile=profile):
+                cap = Mock()
+                cap.get.return_value = 30.
+                cap.read.side_effect = ((True, original), (False, None))
+                output, previews, stop = LocalQueue(), LocalQueue(), Event()
+                with (patch('cv2.VideoCapture', return_value=cap),
+                      patch('study_pet.vision_worker.Thread') as analysis):
+                    capture_loop(output, stop, 'fixture.avi', preview_output=previews, model_profile=profile)
+
+                latest = analysis.call_args.kwargs['args'][0].frame
+                self.assertEqual(latest.image.shape, (720, 960, 3))
+                self.assertIs(latest.original_image, original if profile == 'yolo26_rtmpose' else None)
+                preview = previews.get_nowait()
+                self.assertEqual((preview['width'], preview['height']), (960, 720))
+                cap.release.assert_called_once()

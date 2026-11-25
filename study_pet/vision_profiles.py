@@ -7,13 +7,14 @@ class VisionProfile:
     label: str
     detector_file: str
     body_model: str | None = None
+    slice_phones: bool = False
 
 
 DEFAULT_VISION_PROFILE = 'yolov8s'
 VISION_PROFILES = {
     DEFAULT_VISION_PROFILE: VisionProfile('YOLOv8s（原版）', 'phone_yolov8s.onnx'),
-    'yolo26_mediapipe': VisionProfile('YOLO26s + MediaPipe Pose', 'phone_yolo26s.onnx', 'mediapipe'),
-    'yolo26_rtmpose': VisionProfile('YOLO26s + RTMPose-s', 'phone_yolo26s.onnx', 'rtmpose'),
+    'yolo26_mediapipe': VisionProfile('YOLO26s + MediaPipe Pose', 'phone_yolo26s.onnx', 'mediapipe', slice_phones=True),
+    'yolo26_rtmpose': VisionProfile('YOLO26s + RTMPose-s', 'phone_yolo26s.onnx', 'rtmpose', slice_phones=True),
 }
 
 # Both body models are displayed in COCO-17 order. This threshold only controls

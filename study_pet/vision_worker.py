@@ -61,11 +61,12 @@ def run_analysis(latest,stop,output,message,model_profile=DEFAULT_VISION_PROFILE
     engine=None;analysis=None;body=None
     try:
         from .vision import MODEL_DIR, VisionEngine, PhoneDetector
-        from .vision_pipeline import ParallelAnalysis
+        from .vision_pipeline import OBJECT_INTERVAL_SECONDS, ParallelAnalysis
         profile = VISION_PROFILES[model_profile]
         engine=VisionEngine(include_phone=False)
         if stop.is_set():return
-        phone=PhoneDetector(MODEL_DIR/profile.detector_file)
+        phone=PhoneDetector(MODEL_DIR/profile.detector_file, slice_phones=profile.slice_phones,
+                            slice_budget=OBJECT_INTERVAL_SECONDS)
         if stop.is_set():return
         if profile.body_model is not None:
             from .body_pose import MEDIAPIPE_POSE_FILE, RTMPOSE_FILE, MediaPipeBody, RTMPoseBody
@@ -103,6 +104,7 @@ def capture_loop(output,stop,source,backend=700,preview_output=None,*,native_for
             os.environ['OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS']='0'
         import cv2
         from .vision_pipeline import LatestFrames,RateMeter
+        slice_phones = VISION_PROFILES[model_profile].slice_phones
         previews=output if preview_output is None else preview_output
         cap=cv2.VideoCapture(source) if is_video else cv2.VideoCapture(source,backend)
         if not cap.isOpened():
@@ -138,9 +140,12 @@ def capture_loop(output,stop,source,backend=700,preview_output=None,*,native_for
                 stop.wait(.08);continue
             failures=0
             h,w=bgr.shape[:2]
+            original_image = None
             if w>960 or h>720:
+                # Keep the original pixels only for the latest phone slice.
+                if slice_phones:original_image = bgr
                 factor=min(960/w,720/h);bgr=cv2.resize(bgr,(round(w*factor),round(h*factor)))
-            latest.publish(bgr,captured_at)
+            latest.publish(bgr,captured_at,original_image=original_image)
             # Preview does not wait for any model. Read the camera continuously
             # even when a model is busy, so frames cannot accumulate upstream.
             if captured_at>=next_preview:

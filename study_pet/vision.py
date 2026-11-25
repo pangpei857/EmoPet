@@ -72,12 +72,14 @@ def decode_yolo26(output, width, height, ratio, pad_x, pad_y):
 
 
 class PhoneDetector:
-    def __init__(self,path=MODEL_DIR/'phone_yolov8s.onnx'):
+    def __init__(self,path=MODEL_DIR/'phone_yolov8s.onnx',*,slice_phones=False,slice_budget=None):
         if not Path(path).is_file():
             raise FileNotFoundError(f'缺少检测模型 {Path(path).name}。请使用完整的应用文件夹。')
         import onnxruntime as ort
         options=ort.SessionOptions();options.intra_op_num_threads=2;options.inter_op_num_threads=1
         self.session=ort.InferenceSession(str(path),sess_options=options,providers=['CPUExecutionProvider'])
+        self.slice_phones = slice_phones
+        self.slice_budget = slice_budget
         input_info=self.session.get_inputs()[0]
         self.input_name=input_info.name;self.size=int(input_info.shape[2])
         output_shape = self.session.get_outputs()[0].shape
@@ -88,7 +90,20 @@ class PhoneDetector:
     def detect(self,bgr):
         return self.detect_objects(bgr)[0]
 
-    def detect_objects(self,bgr):
+    def detect_objects(self, bgr, *, original_image=None):
+        """Return normalized boxes, optionally slicing the same frame before resizing."""
+        started = time.perf_counter()
+        phones, persons = self._detect_frame(bgr)
+        if not self.slice_phones or len(persons) != 1:
+            return phones, persons
+        # The crop uses the same model input size. Leave roughly another
+        # full pass of time in the live cycle before starting it.
+        if self.slice_budget is not None and time.perf_counter() - started > self.slice_budget / 2:
+            return phones, persons
+        source = bgr if original_image is None else original_image
+        return self._phones_with_slice(source, persons[0], phones), persons
+
+    def _detect_frame(self,bgr):
         h,w=bgr.shape[:2];ratio=min(self.size/w,self.size/h)
         nw,nh=round(w*ratio),round(h*ratio)
         left,top=(self.size-nw)//2,(self.size-nh)//2
@@ -99,6 +114,42 @@ class PhoneDetector:
         if self.end_to_end:
             return decode_yolo26(output, w, h, ratio, left, top)
         return (decode_phones(output,w,h,ratio,left,top),decode_persons(output,w,h,ratio,left,top))
+
+    def _phones_with_slice(self, bgr, person, full_phones):
+        """Use one SAHI crop around the torso and nearby desk per full-frame pass."""
+        height, width = bgr.shape[:2]
+        long_edge = max(width, height)
+        person_width = (person.x2 - person.x1) * width
+        person_height = (person.y2 - person.y1) * height
+        # Leave room for hands beside the torso while keeping at least ~1.4x zoom.
+        body_span = max(1.5 * person_width, .65 * person_height)
+        side = max(1, round(min(.70 * long_edge, max(.45 * long_edge, body_span))))
+        crop_width, crop_height = min(width, side), min(height, side)
+        center_x = (person.x1 + person.x2) * width / 2
+        center_y = person.y1 * height + .62 * person_height
+        left = max(0, min(width - crop_width, round(center_x - crop_width / 2)))
+        top = max(0, min(height - crop_height, round(center_y - crop_height / 2)))
+        right, bottom = left + crop_width, top + crop_height
+        local_phones, _ = self._detect_frame(bgr[top:bottom, left:right])
+
+        slice_phones = []
+        for phone in local_phones:
+            # The whole frame covers cut edges of the slice. A box clipped by
+            # a slice boundary shouldn't replace a complete full-frame box.
+            if ((left > 0 and phone.x1 == 0.) or (right < width and phone.x2 == 1.)
+                    or (top > 0 and phone.y1 == 0.) or (bottom < height and phone.y2 == 1.)):
+                continue
+            slice_phones.append(Box((left + phone.x1 * crop_width) / width,
+                                    (top + phone.y1 * crop_height) / height,
+                                    (left + phone.x2 * crop_width) / width,
+                                    (top + phone.y2 * crop_height) / height, phone.score))
+
+        phones = full_phones + tuple(slice_phones)
+        if not full_phones or not slice_phones:
+            return phones
+        rectangles = [(box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1) for box in phones]
+        keep = cv2.dnn.NMSBoxes(rectangles, [box.score for box in phones], 0., .5)
+        return tuple(phones[i] for i in np.asarray(keep).reshape(-1))
 
 
 def face_measurements(landmarks,matrix,bgr,box):
@@ -142,7 +193,8 @@ def face_measurements(landmarks,matrix,bgr,box):
 
 
 class VisionEngine:
-    def __init__(self,model_dir=MODEL_DIR,include_phone=True,*,detector_file='phone_yolov8s.onnx'):
+    def __init__(self,model_dir=MODEL_DIR,include_phone=True,*,
+                 detector_file='phone_yolov8s.onnx',slice_phones=False):
         import mediapipe as mp
         self.mp=mp;self.face=None;self.hand=None;self.phone=None;self.warnings=[]
         cv2.setNumThreads(2)
@@ -151,7 +203,7 @@ class VisionEngine:
         # Read model buffers so MediaPipe can run from Chinese Windows paths.
         base=mp.tasks.BaseOptions;vision=mp.tasks.vision
         try:
-            if include_phone:self.phone=PhoneDetector(model_dir/detector_file)
+            if include_phone:self.phone=PhoneDetector(model_dir/detector_file,slice_phones=slice_phones)
             self.face=vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
                 base_options=base(model_asset_buffer=(model_dir/'face_landmarker.task').read_bytes()),
                 running_mode=vision.RunningMode.VIDEO,num_faces=2,output_face_blendshapes=True,

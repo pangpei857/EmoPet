@@ -7,11 +7,15 @@ import time
 from .face_tracking import PrimaryFaceTracker
 
 
+OBJECT_INTERVAL_SECONDS = 1 / 3
+
+
 @dataclass(frozen=True)
 class CapturedFrame:
     sequence: int
     timestamp: float
     image: object
+    original_image: object | None = None
 
 
 class LatestFrames:
@@ -19,10 +23,10 @@ class LatestFrames:
     def __init__(self):
         self.condition=threading.Condition();self.frame=None;self.sequence=0
 
-    def publish(self,image,timestamp):
+    def publish(self,image,timestamp,*,original_image=None):
         with self.condition:
             self.sequence+=1
-            self.frame=CapturedFrame(self.sequence,timestamp,image)
+            self.frame=CapturedFrame(self.sequence,timestamp,image,original_image)
             self.condition.notify_all()
 
     def next(self,after,stop):
@@ -73,7 +77,11 @@ class ParallelAnalysis:
             frame=self.frames.next(sequence,self.stop)
             if frame is None:continue
             sequence=frame.sequence;started=time.monotonic()
-            if hasattr(self.phone,'detect_objects'):phones,persons=self.phone.detect_objects(frame.image)
+            if hasattr(self.phone,'detect_objects'):
+                if frame.original_image is None:
+                    phones,persons=self.phone.detect_objects(frame.image)
+                else:
+                    phones,persons=self.phone.detect_objects(frame.image,original_image=frame.original_image)
             else:phones,persons=self.phone.detect(frame.image),None
             object_finished = time.monotonic()
             body_points, body_ms = (), 0.
@@ -84,7 +92,7 @@ class ParallelAnalysis:
                 body_ms = (time.monotonic() - object_finished) * 1000
             result=(frame.timestamp,phones,(object_finished-started)*1000,rate.tick(started),persons,body_points,body_ms)
             with self.phone_lock:self.phone_result=result
-            self.stop.wait(max(0.,1/3-(time.monotonic()-started)))
+            self.stop.wait(max(0.,OBJECT_INTERVAL_SECONDS-(time.monotonic()-started)))
 
     def face_loop(self):
         sequence=0;rate=RateMeter();tracker=PrimaryFaceTracker()
