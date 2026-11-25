@@ -14,10 +14,38 @@
     "purpose": "MediaPipe CPU landmarks"
   },
   {
+    "file": "phone_yolo26s.onnx",
+    "bytes": 38233232,
+    "sha256": "927ccc8f30396ac501c8c56802086e6f7a865440a041c3988a067fb2ce7c2c81",
+    "source": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s.pt",
+    "purpose": "COCO person class 0 and cell phone class 67, one-to-many FP32 ONNX 640"
+  },
+  {
     "file": "phone_yolov8s.onnx",
     "bytes": 44842404,
     "sha256": "585ed38eed6e072973bd399b8330144816d354285f134b62d044c79f321f4c0d",
     "source": "https://huggingface.co/Ultralytics/YOLOv8/resolve/main/yolov8s.pt",
-    "purpose": "COCO cell phone class 67, exported FP32 ONNX 640"
+    "purpose": "COCO person class 0 and cell phone class 67, FP32 ONNX 640"
+  },
+  {
+    "file": "pose_landmarker_lite.task",
+    "bytes": 5777746,
+    "sha256": "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+    "source": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+    "purpose": "MediaPipe Pose Landmarker Lite, body keypoints"
+  },
+  {
+    "file": "rtmpose_s_body7.onnx",
+    "bytes": 21890172,
+    "sha256": "9aeb635b83f86aea45cf45d85798f7eba1a162de8e0d721c44e54fe5eebaf47d",
+    "source": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip",
+    "purpose": "OpenMMLab RTMPose-s Body7, COCO-17 SimCC keypoints, FP32 ONNX 192x256"
+  },
+  {
+    "file": "yamnet.tflite",
+    "bytes": 4126810,
+    "sha256": "4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf",
+    "source": "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite",
+    "purpose": "MediaPipe Audio Classifier, experimental local sigh candidates"
   }
 ]

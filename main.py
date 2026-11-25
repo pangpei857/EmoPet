@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 from study_pet.pikachu import pet_icon
 from study_pet.storage import Store
 from study_pet.ui import Companion, STYLE
+from study_pet.vision_profiles import DEFAULT_VISION_PROFILE, VISION_PROFILES
 
 
 def smoke_test(companion, preview):
@@ -72,6 +73,8 @@ def main():
     parser.add_argument('--upgrade-smoke-test',action='store_true',help='Verify proactive rest, behavior records and study summaries in an isolated profile')
     parser.add_argument('--open-chat',action='store_true',help='Open the DeepSeek chat panel')
     parser.add_argument('--vision-fixtures',type=Path)
+    parser.add_argument('--vision-profile', choices=tuple(VISION_PROFILES), default=DEFAULT_VISION_PROFILE,
+                        help='Model profile used for --vision-smoke-test')
     parser.add_argument("--preview-path",type=Path)
     parser.add_argument("--quit",action="store_true",help="Gracefully close the running companion")
     parser.add_argument("--profile-dir",type=Path,help="Use a separate local profile for desktop interaction testing")
@@ -135,7 +138,7 @@ def main():
                     run(companion,args.preview_path)
                 elif args.vision_smoke_test:
                     from study_pet.vision_smoke import run
-                    run(companion,args.preview_path,args.vision_fixtures)
+                    run(companion,args.preview_path,args.vision_fixtures,args.vision_profile)
                 else:smoke_test(companion,args.preview_path)
             except Exception:
                 import traceback;traceback.print_exc();result["code"]=1
@@ -144,6 +147,7 @@ def main():
                     args.preview_path.with_suffix('.error.txt').write_text(traceback.format_exc(),encoding='utf-8')
             finally:
                 companion.shutdown_chat()
+                companion.shutdown_audio()
                 companion.shutdown_vision()
                 companion.shutdown_music()
                 companion.timer.stop()

@@ -15,19 +15,19 @@ STATE_LABELS={'running':'进行中','paused':'已暂停','completed':'已完成'
               'exited':'退出时结束','replaced':'切换任务','interrupted':'意外中断'}
 RESPONSE_LABELS={'research':'我在查资料','false_positive':'这次识别错了','snooze':'稍后提醒',
     'rest_now':'现在休息','later':'再学10分钟','dismiss':'知道了','help':'帮我拆解',
-    'thinking':'我在思考','paper':'我在看书写字'}
-KIND_LABELS={'phone':'手机提醒','care':'眉部关怀','head_down':'低头关怀','break_due':'休息关怀'}
+    'thinking':'我在思考','paper':'我在看书写字','talk':'想聊一聊'}
+KIND_LABELS={'phone':'手机提醒','care':'眉部关怀','head_down':'低头关怀','break_due':'休息关怀',
+    'sigh':'声音关怀'}
 BEHAVIOR_LABELS={'presence':'在位','away':'离位','unknown':'无法判断','phone':'疑似手机使用',
     'care':'持续眉部动作','head_down':'持续低头'}
 
 
 def response_allowed(kind,response):
-    if response not in RESPONSE_LABELS:return False
-    if response=='research':return kind=='phone'
-    if response in {'rest_now','later'}:return kind=='break_due'
-    if response in {'help','thinking'}:return kind=='care'
-    if response=='paper':return kind=='head_down'
-    return True
+    if kind=='break_due':return response in {'rest_now','later','dismiss'}
+    if response in {'false_positive','snooze'}:return kind in {'phone','care','head_down','sigh'}
+    if kind=='phone':return response=='research'
+    if kind=='head_down':return response=='paper'
+    return kind in {'care','sigh'} and response in {'help','thinking','talk'}
 
 
 def utc_now():return datetime.now(timezone.utc)
@@ -107,8 +107,11 @@ class HistoryStore:
         CREATE TABLE IF NOT EXISTS summary_notes(
           scope TEXT NOT NULL,target TEXT NOT NULL,note TEXT NOT NULL,PRIMARY KEY(scope,target));
         ''')
-        if 'behavior_id' not in {r[1] for r in conn.execute('PRAGMA table_info(reminders)')}:
+        columns={r[1] for r in conn.execute('PRAGMA table_info(reminders)')}
+        if 'behavior_id' not in columns:
             conn.execute('ALTER TABLE reminders ADD COLUMN behavior_id TEXT')
+        if 'learning_mode' not in columns:
+            conn.execute('ALTER TABLE reminders ADD COLUMN learning_mode TEXT')
 
     def _migrate_daily(self,value):
         def apply(conn):
@@ -220,14 +223,15 @@ class HistoryStore:
     def session(self,session_id):
         return self._run(lambda conn:(dict(row) if (row:=conn.execute('SELECT * FROM sessions WHERE id=?',(session_id,)).fetchone()) else None))
 
-    def add_reminder(self,kind,text,source='vision',session_id=None,behavior_id=None):
-        if kind not in KIND_LABELS or source not in {'vision','example','coach'}:raise ValueError('Unknown reminder type')
+    def add_reminder(self,kind,text,source='vision',session_id=None,behavior_id=None,*,learning_mode=None):
+        if kind not in KIND_LABELS or source not in {'vision','audio','example','coach'}:raise ValueError('Unknown reminder type')
         event_id=uuid4().hex
         def apply(conn):
             linked=session_id if source!='example' and session_id and conn.execute('SELECT 1 FROM sessions WHERE id=?',(session_id,)).fetchone() else None
             behavior=conn.execute('SELECT id FROM behavior_events WHERE id=? AND session_id=?',(behavior_id,linked)).fetchone() if behavior_id and linked else None
-            conn.execute('INSERT INTO reminders(id,session_id,kind,source,text,created_at,behavior_id) VALUES(?,?,?,?,?,?,?)',
-                (event_id,linked,kind,source,str(text)[:2000],stamp(self.clock()),behavior_id if behavior else None))
+            conn.execute('INSERT INTO reminders(id,session_id,kind,source,text,created_at,behavior_id,learning_mode) VALUES(?,?,?,?,?,?,?,?)',
+                (event_id,linked,kind,source,str(text)[:2000],stamp(self.clock()),behavior_id if behavior else None,
+                 learning_mode if source!='example' and learning_mode in {'computer','paper','mixed'} else None))
             return event_id
         return self._run(apply,write=True)
 

@@ -1,18 +1,22 @@
 import random
+import time
 from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QColor, QFont, QPainter, QPainterPath, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QHBoxLayout,
-    QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSpinBox, QSystemTrayIcon, QVBoxLayout, QWidget)
+    QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSystemTrayIcon, QVBoxLayout, QWidget)
 
+from .camera_ui import TimeSpinBox
 from .pikachu import PetCanvas, pet_icon, ACTION_LABELS
 from .focus import FocusSession, Status
 from .storage import Store
-from .perception import FeedbackEvent,ReminderGate
-from .history import parse,local_day
+from .perception import FeedbackEvent,ReminderGate,VisionSettings
+from .history import parse,local_day,response_allowed
 from .music_core import MusicState,MusicVisibility
 from .music_ui import MusicCard
 from .music_service import MusicController
 from .proactive import ProactiveCoach
+from .care_strategy import CareTiming, MODE_LABELS, SighEvidence
+from .support_memory import SupportMemory
 
 
 STYLE = """
@@ -61,7 +65,8 @@ class Bubble(QWidget):
         self.actions=QWidget(self);self.action_buttons={}
         for key,title in [('research','我在查资料'),('false_positive','这次识别错了'),('snooze','稍后提醒'),
                           ('rest_now','休息 5 分钟'),('later','再学 10 分钟'),('dismiss','这次先不用'),
-                          ('help','帮我拆解问题'),('thinking','我在认真思考'),('paper','我在看书写题')]:
+                          ('help','帮我拆解问题'),('thinking','我在认真思考'),('paper','我在看书写题'),
+                          ('talk','想聊一聊')]:
             button=QPushButton(title,self.actions);button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda checked=False,k=key:self.respond(k))
             self.action_buttons[key]=button
@@ -79,7 +84,7 @@ class Bubble(QWidget):
 
     def action_rows(self):
         if self.reminder_kind=='break_due':return [('rest_now',),('later','dismiss')]
-        if self.reminder_kind=='care':return [('help','thinking'),('false_positive','snooze')]
+        if self.reminder_kind in {'care','sigh'}:return [('help','talk'),('thinking','snooze'),('false_positive',)]
         if self.reminder_kind=='head_down':return [('paper',),('false_positive','snooze')]
         if self.reminder_kind=='phone':return [('research',),('false_positive','snooze')]
         return [('false_positive','snooze')]
@@ -409,10 +414,17 @@ class FocusPanel(QWidget):
             b=QPushButton(f"{minutes} 分钟");b.setCheckable(True)
             self.duration_group.addButton(b,minutes);self.choices.append(b);durations.addWidget(b)
             b.clicked.connect(lambda checked=False,m=minutes:self.duration.setValue(m))
-        self.duration=QSpinBox();self.duration.setRange(1,120);self.duration.setValue(25);self.duration.setSuffix(" 分钟")
+        self.duration=TimeSpinBox()
+        self.duration.setRange(1,120)
+        self.duration.setValue(25)
+        self.duration.setSuffix(" 分钟")
         self.duration.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.duration.setToolTip("自定义时长，支持1到120分钟")
-        self.duration.setMinimumWidth(95);durations.addWidget(self.duration)
+        self.duration.setAccessibleName('学习时长')
+        self.duration.plus_button.setAccessibleName('增加学习时长')
+        self.duration.minus_button.setAccessibleName('减少学习时长')
+        self.duration.setMinimumSize(104,40)
+        durations.addWidget(self.duration)
         self.duration.valueChanged.connect(self.sync_duration);self.sync_duration(25)
         outer.addLayout(durations)
         self.clock=ClockFace();outer.addWidget(self.clock)
@@ -430,11 +442,23 @@ class FocusPanel(QWidget):
         coach_row=QHBoxLayout()
         self.care_enabled=QCheckBox('主动关怀');self.care_enabled.setChecked(True)
         self.care_enabled.setToolTip('开关自动休息、眉部、低头和手机关怀；摄像头与行为记录由视觉窗口单独控制。')
-        self.care_interval=QSpinBox();self.care_interval.setRange(15,120);self.care_interval.setSingleStep(5)
-        self.care_interval.setValue(60);self.care_interval.setSuffix(' 分钟后提醒休息')
+        self.care_interval=TimeSpinBox()
+        self.care_interval.setRange(15,120)
+        self.care_interval.setSingleStep(5)
+        self.care_interval.setValue(60)
+        self.care_interval.setSuffix(' 分钟后提醒休息')
+        self.care_interval.setAccessibleName('休息提醒间隔')
+        self.care_interval.plus_button.setAccessibleName('增加休息提醒间隔')
+        self.care_interval.minus_button.setAccessibleName('减少休息提醒间隔')
+        self.care_interval.setMinimumHeight(40)
         coach_row.addWidget(self.care_enabled);coach_row.addWidget(self.care_interval,1);outer.addLayout(coach_row)
         self.care_status=QLabel('连续学习从本次打开助手开始累计。');self.care_status.setObjectName('muted')
         self.care_status.setWordWrap(True);outer.addWidget(self.care_status)
+        settings_row=QHBoxLayout()
+        self.companion_settings=QPushButton('陪伴设置')
+        self.snooze_care=QPushButton('勿扰 10 分钟')
+        settings_row.addWidget(self.companion_settings,1);settings_row.addWidget(self.snooze_care,1)
+        outer.addLayout(settings_row)
         actions=QHBoxLayout();actions.setSpacing(7);self.action_buttons={}
         for key,label in [("idle","待机"),("care","关心我"),("remind","提醒我"),("encourage","为我加油")]:
             button=QPushButton(label);button.setToolTip(f"让皮卡丘做出{ACTION_LABELS[key]}动作")
@@ -469,6 +493,17 @@ class Companion:
         self.reminder_gate=ReminderGate()
         self.coach=ProactiveCoach(store.get('proactive',{}),clock=lambda:self.session.clock())
         self._suspended_focus=None;self._presence_text='摄像头未观测'
+        self._presence='unobserved'
+        self.care_mode=store.get('companion_mode','balanced')
+        if self.care_mode not in MODE_LABELS:self.care_mode='balanced'
+        self.coach.delivery_scale=2/3 if self.care_mode=='supportive' else 1.
+        self.audio_enabled=store.get('audio_sensing') is True
+        self.read_care=store.get('read_care') is True
+        self.audio_status='未开启' if not self.audio_enabled else '等待开始专注'
+        self.audio_sensing=None;self.speech=None;self.companion_settings=None
+        self._audio_closing=False;self._audio_resume_at=0.
+        self.sigh_evidence=SighEvidence();self._audio_round=None;self._memory_rest=None
+        self.memory=SupportMemory(store.path.parent)
         self.vision_controller=None;self.camera_panel=None
         self.chat_panel=None
         self.pet=PetWindow();self.panel=FocusPanel()
@@ -476,6 +511,8 @@ class Companion:
         self.panel.care_interval.setValue(self.coach.as_dict().get('interval_minutes',60))
         self.panel.care_enabled.toggled.connect(self.save_coach_settings)
         self.panel.care_interval.valueChanged.connect(self.save_coach_settings)
+        self.panel.companion_settings.clicked.connect(self.show_companion_settings)
+        self.panel.snooze_care.clicked.connect(self.toggle_care_snooze)
         self.music_enabled=bool(store.get('music_enabled',True))
         self.music_controller=MusicController(self.pet)
         self.music_controller.state_changed.connect(self.on_music_state)
@@ -531,6 +568,7 @@ class Companion:
         else:self.pet.move(screen.right()-self.pet.width()-38,screen.bottom()-self.pet.height()-18)
         self.timer=QTimer(self.pet);self.timer.timeout.connect(self.on_tick);self.timer.start(200)
         QApplication.instance().aboutToQuit.connect(self.summary_service.shutdown)
+        QApplication.instance().aboutToQuit.connect(self.shutdown_audio)
         self.pet.show();self.feedback("摸摸头或戳戳肚子，\n双击打开面板，右键还有更多。","idle")
         self.refresh()
         if self.music_enabled and (tray_enabled if music_autostart is None else music_autostart):
@@ -544,33 +582,136 @@ class Companion:
     def save_coach_settings(self,*args):
         self.coach.configure(enabled=self.panel.care_enabled.isChecked(),interval_minutes=self.panel.care_interval.value())
         self.store.save(proactive=self.coach.as_dict())
+
+    def show_companion_settings(self):
+        if self.companion_settings is None:
+            from .companion_settings import CompanionSettings
+            self.companion_settings=CompanionSettings(self.memory,mode=self.care_mode,
+                audio=self.audio_enabled,reading=self.read_care,learning_mode=self.learning_mode,parent=self.panel)
+            self.companion_settings.mode_changed.connect(self.set_care_mode)
+            self.companion_settings.audio_changed.connect(self.set_audio_sensing)
+            self.companion_settings.reading_changed.connect(self.set_read_care)
+        self.companion_settings.audio_status.setText(self.audio_status)
+        self.companion_settings.refresh_memory()
+        self.companion_settings.show();self.companion_settings.raise_()
+
+    def set_care_mode(self,mode):
+        if mode not in MODE_LABELS:return
+        self.care_mode=mode;self.store.save(companion_mode=mode)
+        self.coach.delivery_scale=2/3 if mode=='supportive' else 1.
+        self.sigh_evidence.reset();self.refresh()
+
+    def toggle_care_snooze(self):
+        self.reminder_gate.toggle_snooze()
+        if self.camera_panel is not None:
+            self.camera_panel.policy.reset_evidence();self.camera_panel.update_reminder_controls()
+        self.sigh_evidence.reset();self.refresh()
+
+    def set_audio_sensing(self,enabled):
+        self.audio_enabled=enabled;self.store.save(audio_sensing=enabled)
+        self.sigh_evidence.reset();self.update_audio()
+
+    def set_read_care(self,enabled):
+        self.read_care=enabled;self.store.save(read_care=enabled)
+
+    def speech_service(self):
+        if self.speech is None:
+            from .speech import LocalSpeech
+            self.speech=LocalSpeech(self.pet)
+            self.speech.state_changed.connect(self.on_speech_state)
+        return self.speech
+
+    def on_speech_state(self,*args):
+        self.sigh_evidence.reset()
+        self._audio_resume_at=time.monotonic()+1
+        self.update_audio()
+
+    def set_audio_status(self,status):
+        self.audio_status=status
+        if self.companion_settings is not None:
+            self.companion_settings.audio_status.setText(status)
+
+    def update_audio(self):
+        if self._audio_closing:return
+        s=self.session
+        studying=s.kind=='focus' and s.status==Status.RUNNING and s.remaining>0
+        round_id=s.round_id if studying else None
+        if round_id!=self._audio_round:
+            self._audio_round=round_id;self.sigh_evidence.reset()
+        if self.audio_sensing is None:
+            if not self.audio_enabled:return
+            from .audio_sensing import AudioSensing
+            self.audio_sensing=AudioSensing(self.pet)
+            self.audio_sensing.candidate.connect(self.receive_sigh)
+            self.audio_sensing.status_changed.connect(self.set_audio_status)
+        self.audio_sensing.update(enabled=self.audio_enabled,studying=studying,
+            inhibited=bool(self.speech and self.speech.busy) or time.monotonic()<self._audio_resume_at)
+
+    def shutdown_audio(self):
+        self._audio_closing=True
+        if self.audio_sensing is not None:self.audio_sensing.shutdown()
+        if self.speech is not None:self.speech.shutdown()
+
+    def learning_mode(self):
+        if self.camera_panel is not None:return self.camera_panel.settings.learning_mode
+        return VisionSettings.from_dict(self.store.get('vision',{})).learning_mode
+
+    def care_timing(self):
+        camera_live=(self.camera_panel is not None and self.vision_controller is not None
+            and self.vision_controller.state in {'starting','previewing','running'}
+            and not getattr(self.camera_panel,'_video_mode',False))
+        presence=self._presence if camera_live else 'unobserved'
+        chatting=(self.chat_panel is not None and self.chat_panel.isVisible()
+            and (self.chat_panel.isActiveWindow() or self.chat_panel.client.busy))
+        return CareTiming(self.care_mode,presence,chatting or bool(self.speech and self.speech.busy))
+
+    def receive_sigh(self,candidate):
+        s=self.session;timing=self.care_timing()
+        if (not self.audio_enabled or self._audio_closing or time.monotonic()<self._audio_resume_at
+                or s.kind!='focus' or s.status!=Status.RUNNING or s.remaining<=0
+                or self.reminder_gate.sigh_paused or self.reminder_gate.snoozed
+                or not timing.available or not self.panel.care_enabled.isChecked()):return
+        if self.sigh_evidence.observe(candidate.timestamp,s.clock(),self.care_mode):
+            self.route_care_event(FeedbackEvent('sigh','想歇一下，还是聊聊刚才卡在哪里？','care'),'audio')
         self.refresh()
 
     def update_coach(self,notify=True):
         s=self.session
         event=self.coach.update(focus_active=s.kind=='focus' and s.status==Status.RUNNING and s.remaining>0,
             rest_active=s.kind=='break' and s.status==Status.RUNNING,
-            enabled=notify and self.panel.care_enabled.isChecked(),
+            enabled=notify and self.panel.care_enabled.isChecked() and self.care_timing().available,
             visible=self.pet.isVisible() and self.pet.bubbles_enabled,snoozed=self.reminder_gate.snoozed,
             now=s.clock())
         if event:self.present_reminder(event,'coach')
         return event
 
     def route_vision_event(self,event):
+        delivered=self.route_care_event(event,'vision')
+        if self.camera_panel is not None:self.camera_panel.reminder_result(event,bool(delivered))
+        return delivered
+
+    def route_care_event(self,event,source):
         self.update_coach()
+        timing=self.care_timing()
+        if not timing.available or not self.panel.care_enabled.isChecked():return None
+        preference=self.memory.preferences(self.learning_mode()).get(event.kind) if self.memory.enabled else None
+        if not timing.wants_automatic_support(event.kind,reduced=bool(preference and preference.reduce_interruptions)):
+            return None
         chosen=self.coach.choose(event,now=self.session.clock(),
             enabled=self.panel.care_enabled.isChecked(),visible=self.pet.isVisible() and self.pet.bubbles_enabled,
             snoozed=self.reminder_gate.snoozed)
-        delivered=None
-        if chosen:
-            delivered=self.present_reminder(chosen,'coach') if chosen.kind=='break_due' else self.receive_vision_event(chosen)
-        if self.camera_panel is not None:self.camera_panel.reminder_result(event,bool(delivered and chosen is event))
-        return delivered
+        if chosen is None:return None
+        if chosen.kind=='break_due':
+            self.present_reminder(chosen,'coach');return None
+        if chosen.kind=='care' and self.sigh_evidence.near(self.session.clock()):
+            chosen=FeedbackEvent('care','如果这一步有些卡，可以先歇口气，也可以和我聊聊。','care',chosen.behavior_id)
+        return self.receive_vision_event(chosen) if source=='vision' else self.present_reminder(chosen,source)
 
     def create_menu(self):
         menu=QMenu(self.pet)
         menu.addAction("打开学习面板",self.show_panel)
         menu.addAction('视觉陪伴 · 摄像头',self.show_camera)
+        menu.addAction('陪伴设置',self.show_companion_settings)
         menu.addAction('学习记录',self.show_history)
         menu.addAction('和皮卡丘聊聊 · DeepSeek',self.show_chat)
         music=menu.addMenu('QQ 音乐联动')
@@ -679,7 +820,6 @@ class Companion:
         if self.camera_panel is None:
             from .camera import VisionController
             from .camera_ui import CameraPanel
-            from .perception import VisionSettings
             self.vision_controller=VisionController(self.pet)
             self.vision_controller.state_changed.connect(self.receive_camera_state)
             QApplication.instance().aboutToQuit.connect(self.vision_controller.shutdown)
@@ -727,7 +867,8 @@ class Companion:
         if self.chat_panel is None:
             from .chat_ui import ChatPanel
             self.chat_panel=ChatPanel(self.store,self.chat_context,
-                lambda:self.session.status not in {Status.RUNNING,Status.PAUSED})
+                lambda:self.session.status not in {Status.RUNNING,Status.PAUSED},
+                speech=self.speech_service(),memory_context=lambda:self.memory.prompt_context(self.learning_mode()))
             self.chat_panel.setWindowIcon(pet_icon())
             self.chat_panel.reply_for_pet.connect(lambda text:self.feedback(text,'care'))
             self.chat_panel.task_selected.connect(self.apply_chat_task)
@@ -788,11 +929,17 @@ class Companion:
         return self.history.upsert_behavior(target or s.round_id,event)
 
     def receive_presence(self,state):
+        self._presence=state.get('state','unknown') if isinstance(state,dict) else 'unknown'
         labels={'present':'在位','away':'已离位','unknown':'在位情况无法判断'}
         self._presence_text=state.get('text') or labels.get(state.get('state'),'在位情况无法判断') if isinstance(state,dict) else str(state)
 
     def receive_camera_state(self,state,text):
-        if state!='running':self._presence_text='摄像头无法判断' if state=='error' else '摄像头未观测'
+        if state in {'starting','previewing','running'}:
+            self._presence='unknown'
+            self._presence_text='正在确认在位状态' if state=='running' else text
+        else:
+            self._presence='unobserved'
+            self._presence_text='摄像头无法判断' if state=='error' else '摄像头未观测'
 
     def send_sample(self,kind='phone'):
         examples={'phone':FeedbackEvent('phone','这是一条手机提醒示例。\n试着告诉我：正在查资料、识别错了，或稍后提醒。','remind'),
@@ -803,11 +950,13 @@ class Companion:
 
     def present_reminder(self,event,source):
         linked=None
-        if source in {'vision','coach'} and self.session.kind=='focus' and self.session.status in {Status.RUNNING,Status.PAUSED}:
+        if source in {'vision','audio','coach'} and self.session.kind=='focus' and self.session.status in {Status.RUNNING,Status.PAUSED}:
             self.checkpoint_round(force=True);linked=self.session.round_id
-        event_id=self.history.add_reminder(event.kind,event.text,source,linked,behavior_id=getattr(event,'behavior_id',None))
+        event_id=self.history.add_reminder(event.kind,event.text,source,linked,
+            behavior_id=getattr(event,'behavior_id',None),learning_mode=self.learning_mode())
         self.pet.bubble.action_buttons['rest_now'].setText(f"休息 {self.coach.as_dict()['rest_minutes']} 分钟")
         self.pet.say(event.text,event.mood,20000,reminder=(event_id,event.kind) if event_id else None)
+        if source!='example' and self.read_care:self.speech_service().speak(event.text)
         if self.history_panel is not None and self.history_panel.isVisible():self.history_panel.refresh_data()
         if source=='example' and not self.pet.bubbles_enabled:
             self.show_history();self.history_panel.reveal_reminder(event_id)
@@ -824,29 +973,36 @@ class Companion:
     def respond_to_reminder(self,event_id,response):
         event=self.history.reminder(event_id)
         if not event:return False
-        allowed={'phone':{'research','false_positive','snooze'},
-            'care':{'help','thinking','false_positive','snooze'},
-            'head_down':{'paper','false_positive','snooze'},
-            'break_due':{'rest_now','later','dismiss'}}
-        if response not in allowed.get(event['kind'],set()):return False
+        if not response_allowed(event['kind'],response):return False
         controls=self.can_control_reminder(event)
         if response!='false_positive' and not controls:return False
         if not self.history.respond(event_id,response):return False
         if event['source']=='example':message='示例回应已记录。\n真实提醒设置保持不变。'
         else:
+            if self.memory.enabled and event.get('session_id'):
+                self.memory.record_feedback(event_id,event['session_id'],event['kind'],event.get('learning_mode') or 'unknown',
+                    response,observed_at=parse(event['created_at']))
+                if self.companion_settings is not None and self.companion_settings.isVisible():
+                    self.companion_settings.refresh_memory()
             if controls:self.reminder_gate.apply(response,event['kind'])
             if response=='rest_now':
+                previous_round=self.session.round_id
                 self.rest();message=f"先休息 {self.coach.as_dict()['rest_minutes']} 分钟。\n刚才的任务和剩余时间已经保留。"
+                if self.session.kind=='break' and self.session.round_id!=previous_round:
+                    self._memory_rest=(self.session.round_id,event_id)
             elif response in {'later','dismiss'}:
                 self.coach.defer(600 if response=='later' else 1800,now=self.session.clock())
                 message='好，十分钟后再问你。' if response=='later' else '好的，接下来半小时不再询问休息。'
             elif response=='help':
                 self.show_chat();self.chat_panel.prepare_prompt('我正在学习“'+self.session.task+'”。我有一个地方没弄懂，请先问我具体卡在哪里，再帮助我分析。','chat')
                 message='学习对话已经打开。\n告诉我卡在哪里，我们一起拆解。'
-            elif response=='thinking':message='好的，安心思考。\n这段眉部变化会标记为正在思考。'
+            elif response=='talk':
+                self.show_chat();self.chat_panel.prepare_prompt('我想聊聊刚才学习时的感受。请先听我说，问一个简短的问题，再根据我的回答决定是否给建议。','chat')
+                message='我在，愿意的话就说说刚才的感受。'
+            elif response=='thinking':message='好的，安心思考。\n同类关怀会暂时暂停。'
             elif response=='paper':message='明白，你在看书写题。\n这段低头会标记为学习用途。'
             elif response=='research':message='好呀，安心查资料。\n手机提醒暂停5分钟，关怀继续保留。'
-            elif response=='snooze':message='好的，接下来10分钟\n我会暂停视觉提醒。'
+            elif response=='snooze':message='好的，接下来10分钟\n我会暂停主动提醒。'
             elif controls:message='已记下这次误报。\n1分钟内不重复这类提醒。'
             else:message='已补记这次误报。\n谢谢你的反馈。'
         if self.camera_panel is not None and event['source']=='vision' and controls:
@@ -958,7 +1114,11 @@ class Companion:
         self.account()
         self.reset_vision_behaviors()
         if self.session.kind=="break":
-            if self.session.elapsed>=self.coach.as_dict()['rest_minutes']*60:self.coach.reset_after_rest()
+            if self.session.elapsed>=self.coach.as_dict()['rest_minutes']*60:
+                self.coach.reset_after_rest()
+                if self._memory_rest and self._memory_rest[0]==self.session.round_id:
+                    self.memory.record_outcome(self._memory_rest[1],'rested',expected_response='rest_now')
+            self._memory_rest=None
             self.feedback("休息结束啦。\n准备好继续刚才的任务吗？" if self._suspended_focus else "休息结束啦。\n准备好开始下一轮了吗？","remind",notify=True)
         else:self.feedback("这一轮完成啦，辛苦了！\n伸个懒腰，休息一下吧。","remind",notify=True)
         self.refresh()
@@ -967,6 +1127,7 @@ class Companion:
         self.update_coach()
         if self.session.tick() or (self.session.status==Status.COMPLETED and not self._accounted):
             self.completed()
+        self.update_audio()
         self.checkpoint_round()
         self.refresh()
 
@@ -1004,7 +1165,8 @@ class Companion:
         pending=max(0,int(s.elapsed)-int(self._history_saved_elapsed)) if active and s.kind=='focus' and not self._accounted else 0
         now_seconds=stats['seconds']+pending
         p.summary.setText(f"今天已专注 {now_seconds//60} 分钟 · 完成 {stats['completed']} 轮")
-        p.care_status.setText(f'距上次完整休息已累计学习 {int(self.coach.streak_seconds)//60} 分钟 · {self._presence_text}')
+        p.snooze_care.setText('恢复主动提醒' if self.reminder_gate.snoozed else '勿扰 10 分钟')
+        p.care_status.setText(f'{MODE_LABELS[self.care_mode]} · {self._presence_text}\n距上次完整休息已累计学习 {int(self.coach.streak_seconds)//60} 分钟')
 
     def quit(self):
         self.update_coach(notify=False)
@@ -1016,6 +1178,7 @@ class Companion:
         if self.tray:self.tray.hide()
         self.shutdown_vision()
         self.shutdown_chat()
+        self.shutdown_audio()
         self.shutdown_music()
         self.summary_service.shutdown()
         if self.history_panel is not None:self.history_panel.hide()

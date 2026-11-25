@@ -6,5 +6,7 @@ dist/
 *.spec
 !Momo.spec
 .artifacts/
+/thesis/
+/交付导出/
 ~$*
 

@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 import numpy as np
-from study_pet.vision import decode_phones,decode_persons,face_measurements,VisionEngine
+from study_pet.vision import decode_phones,decode_persons,decode_yolo26,face_measurements,VisionEngine
 from study_pet.perception import Box,FaceFeatures,Observation,VisionSettings
 from study_pet.vision_behavior import head_down
 
@@ -32,6 +32,17 @@ class PhoneDecoderTests(unittest.TestCase):
         phones=decode_phones(output,640,480,1.,0,80)
         self.assertEqual(len(people),1);self.assertEqual(len(phones),1)
         self.assertEqual(people[0].x1,phones[0].x1)
+
+    def test_end_to_end_yolo26_uses_corner_coordinates_and_class_thresholds(self):
+        output = np.array([[[240,200,400,440,.83,67], [80,60,600,620,.93,0],
+                            [32,200,48,225,.36,67], [20,100,400,400,.89,73],
+                            [np.nan,100,300,400,.9,67]]], dtype=np.float32)
+        phones, people = decode_yolo26(output,640,480,1.,0,80)
+        self.assertEqual(len(phones),1)
+        self.assertEqual(len(people),1)
+        self.assertAlmostEqual(phones[0].x1,240/640)
+        self.assertAlmostEqual(phones[0].y2,360/480)
+        self.assertEqual((people[0].y1,people[0].y2),(0.,1.))
 
 
 class FaceFeatureExtractionTests(unittest.TestCase):

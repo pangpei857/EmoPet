@@ -23,12 +23,13 @@ class FakeController(QObject):
     state_changed=Signal(str,str);devices_changed=Signal(object);frame_ready=Signal(object)
     observation_ready=Signal(object)
     def __init__(self):
-        super().__init__();self.state='off';self.starts=[];self.stops=0;self.scans=0
+        super().__init__();self.state='off';self.starts=[];self.start_options=[];self.stops=0;self.scans=0
     @property
     def active(self):return self.state in {'starting','running','stopping'}
     def refresh_devices(self):self.scans+=1
-    def start(self,*args):
-        self.starts.append(args);self.state='running';self.state_changed.emit('running','已开启');return True
+    def start(self,*args,**options):
+        self.starts.append(args);self.start_options.append(options)
+        self.state='running';self.state_changed.emit('running','已开启');return True
     def stop(self):self.stops+=1;self.state='off';self.state_changed.emit('off','已关闭')
 
 
@@ -65,6 +66,19 @@ class CameraUiTests(unittest.TestCase):
         self.assertEqual([event.kind for event in self.events],['phone'])
         self.assertIsNotNone(self.panel.preview.image)
         self.assertIn('刚刚提醒',self.panel.notice.text())
+
+    def test_selected_model_persists_and_is_applied_on_next_start(self):
+        self.panel.on_devices([{'name':'测试摄像头','index':2,'backend':700}])
+        picker = self.panel.model_profile
+        picker.setCurrentIndex(picker.findData('yolo26_rtmpose'))
+        loaded = VisionSettings.from_dict(self.saved[-1])
+        self.assertEqual(loaded.model_profile, 'yolo26_rtmpose')
+        self.assertEqual(self.controller.starts, [])
+        self.panel.toggle_capture()
+        self.assertEqual(self.controller.start_options[-1], {'model_profile':'yolo26_rtmpose'})
+        self.assertFalse(picker.isEnabled())
+        self.panel.toggle_capture()
+        self.assertTrue(picker.isEnabled())
 
     def test_video_test_and_hidden_pet_do_not_trigger(self):
         self.controller.start('video.avi');self.panel._video_mode=True;self.frames()

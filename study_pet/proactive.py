@@ -66,6 +66,7 @@ class ProactiveCoach:
         self._last_kind = {}
         self._deferred_until = -math.inf
         self._break_notified = False
+        self.delivery_scale = 1.0
 
     def as_dict(self):
         """Persist preferences, never process-specific monotonic timestamps."""
@@ -105,8 +106,9 @@ class ProactiveCoach:
         return True
 
     def _deliverable(self, kind, now):
-        return (now - self._last_global + 1e-6 >= self.settings.global_cooldown_seconds
-                and now - self._last_kind.get(kind, -math.inf) + 1e-6 >= self.settings.kind_cooldown_seconds)
+        scale = self.delivery_scale if kind != 'break_due' else 1.0
+        return (now - self._last_global + 1e-6 >= self.settings.global_cooldown_seconds * scale
+                and now - self._last_kind.get(kind, -math.inf) + 1e-6 >= self.settings.kind_cooldown_seconds * scale)
 
     def _break_ready(self, now):
         return (self._focus_active and not self._break_notified

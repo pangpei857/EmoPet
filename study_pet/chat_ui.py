@@ -4,7 +4,7 @@ import json
 import re
 
 from PySide6.QtCore import Qt,QTimer,Signal
-from PySide6.QtGui import QKeySequence,QShortcut
+from PySide6.QtGui import QKeySequence,QShortcut,QTextCursor
 from PySide6.QtWidgets import (QAbstractItemView,QCheckBox,QComboBox,QFormLayout,QHBoxLayout,QLabel,
     QLineEdit,QListWidget,QListWidgetItem,QPlainTextEdit,QPushButton,QScrollArea,QTableWidget,
     QTableWidgetItem,QTabWidget,QTextBrowser,QVBoxLayout,QWidget,QHeaderView)
@@ -14,15 +14,20 @@ from .chat_network import ChatClient
 from .chat_store import ChatStore
 from .secrets import KeyVault
 from .camera_ui import TimeSpinBox
+from .speech import LocalSpeech
 
 
 class ChatPanel(QWidget):
     reply_for_pet=Signal(str)
     task_selected=Signal(str,int)
 
-    def __init__(self,store,context=None,can_apply=None):
+    def __init__(self,store,context=None,can_apply=None,*,speech=None,memory_context=None):
         super().__init__();self.store=store;self.context=context or (lambda:{})
         self.can_apply=can_apply or (lambda:True)
+        self.memory_context=memory_context or (lambda:'')
+        self._memory_preview=''
+        self.speech=speech if speech is not None else LocalSpeech(self)
+        self._speech_action=None
         self.config=ChatConfig.from_dict(store.get('chat',{}))
         self.vault=KeyVault(store.path.parent);self.chats=ChatStore(store.path.parent)
         self.client=ChatClient(self);self.conversation_id=None;self._turns=[];self._turn_id=None
@@ -35,6 +40,10 @@ class ChatPanel(QWidget):
         self._build_chat();self._build_plan();self._build_config()
         self.status=QLabel('先在“模型配置”填写DeepSeek API Key，再开始对话。')
         self.status.setWordWrap(True);self.status.setTextFormat(Qt.TextFormat.PlainText);outer.addWidget(self.status)
+        self.speech.state_changed.connect(self.on_speech_state)
+        self.speech.recognized.connect(self.insert_recognized_text)
+        self.speech.failed.connect(self.on_speech_error)
+        self.tabs.currentChanged.connect(self.on_tab_changed)
         self.render_timer=QTimer(self);self.render_timer.setSingleShot(True);self.render_timer.timeout.connect(self.render)
         self.save_timer=QTimer(self);self.save_timer.setInterval(1000);self.save_timer.timeout.connect(self.save_partial)
         self.client.chunk.connect(self.on_chunk);self.client.thinking.connect(lambda:self.status.setText('DeepSeek正在思考…'))
@@ -56,7 +65,11 @@ class ChatPanel(QWidget):
         main=QVBoxLayout();self.transcript=QTextBrowser();self.transcript.setOpenLinks(False);self.transcript.setOpenExternalLinks(False)
         self.transcript.setMinimumHeight(120);main.addWidget(self.transcript,1)
         self.context_check=QCheckBox('附带当前学习任务和计时状态');self.context_check.setChecked(self.config.include_context)
-        self.context_check.toggled.connect(self.save_context_choice);main.addWidget(self.context_check)
+        self.context_check.toggled.connect(self.save_context_choice)
+        context_row=QHBoxLayout();context_row.addWidget(self.context_check)
+        self.memory_check=QCheckBox('本次附带陪伴偏好')
+        self.memory_check.setEnabled(False)
+        context_row.addWidget(self.memory_check);context_row.addStretch();main.addLayout(context_row)
         self.context_label=QLabel('');self.context_label.setObjectName('muted');self.context_label.setWordWrap(True);main.addWidget(self.context_label)
         quick=QHBoxLayout();self.quick_buttons=[]
         for title,prompt,purpose in [('拆分当前任务','请把我的学习目标拆成可执行的小步骤。','plan'),
@@ -68,6 +81,20 @@ class ChatPanel(QWidget):
         self.composer=QPlainTextEdit();self.composer.setPlaceholderText('告诉我你正在学什么，或者贴出卡住的问题。Ctrl+Enter 发送，Enter 换行。')
         self.composer.setMinimumHeight(75);self.composer.setMaximumHeight(115);self.composer.textChanged.connect(self.update_buttons)
         main.addWidget(self.composer)
+        voice_row=QHBoxLayout()
+        self.dictate_button=QPushButton('开始语音输入')
+        self.dictate_button.setToolTip('点击开始，再点击结束。Windows 在本机识别中文，文字可编辑，点击发送后才使用模型。')
+        self.dictate_button.clicked.connect(self.toggle_dictation);voice_row.addWidget(self.dictate_button)
+        self.cancel_dictation_button=QPushButton('放弃语音')
+        self.cancel_dictation_button.clicked.connect(self.cancel_dictation);self.cancel_dictation_button.hide()
+        voice_row.addWidget(self.cancel_dictation_button)
+        self.read_button=QPushButton('朗读回复')
+        self.read_button.setToolTip('使用 Windows 本机语音朗读当前对话中最近一条完整回复。')
+        self.read_button.clicked.connect(self.toggle_read_aloud);voice_row.addWidget(self.read_button)
+        self.auto_read=QCheckBox('自动朗读回复')
+        self.auto_read.setChecked(self.store.get('chat_auto_read',False) is True)
+        self.auto_read.toggled.connect(self.save_auto_read_choice);voice_row.addWidget(self.auto_read)
+        voice_row.addStretch();main.addLayout(voice_row)
         send_row=QHBoxLayout();self.purpose=QComboBox();self.purpose.addItem('学习交流','chat');self.purpose.addItem('拆解任务','plan')
         send_row.addWidget(self.purpose);self.counter=QLabel('0 / 6000');self.counter.setObjectName('muted');send_row.addWidget(self.counter);send_row.addStretch()
         self.stop_button=QPushButton('停止生成');self.stop_button.clicked.connect(self.client.stop);send_row.addWidget(self.stop_button)
@@ -125,7 +152,102 @@ class ChatPanel(QWidget):
 
     def update_context_label(self):
         context=self.context() if self.context_check.isChecked() else {}
-        self.context_label.setText(('当前任务：'+str(context.get('task') or '尚未设置')+' · '+str(context.get('state') or '未开始')) if context else '仅发送对话文字。')
+        self.context_label.setText(('当前任务：'+str(context.get('task') or '尚未设置')+' · '+str(context.get('state') or '未开始'))
+            if context else '不附带当前学习状态。')
+        self.update_memory_choice()
+
+    def read_support_memory(self):
+        value=self.memory_context()
+        return value.strip() if isinstance(value,str) else ''
+
+    def update_memory_choice(self):
+        memory=self.read_support_memory()
+        if memory!=self._memory_preview:
+            self._memory_preview=memory
+            self.memory_check.setChecked(False)
+        self.memory_check.setEnabled(bool(memory) and not self.client.busy)
+        hint=('发送时附带以下陪伴偏好，仅用于本次请求。\n'+memory) if memory else '暂时没有可附带的陪伴偏好。'
+        self.memory_check.setToolTip(hint)
+        self.memory_check.setAccessibleDescription(hint)
+
+    def save_auto_read_choice(self,enabled):
+        self.store.save(chat_auto_read=enabled)
+        if not enabled and self._speech_action=='speech':
+            self.speech.cancel()
+
+    def latest_speakable_reply(self):
+        for turn in reversed(self._turns):
+            if turn.get('status')!='complete' or not turn.get('answer'):
+                continue
+            if turn.get('purpose')=='plan':
+                try:return plan_text(parse_plan(turn['answer']))
+                except ValueError:continue
+            return turn['answer']
+        return ''
+
+    def toggle_dictation(self):
+        if self._speech_action=='capture':
+            self.speech.stop_recognition()
+        elif not self.speech.busy and not self.client.busy:
+            self._speech_action='capture'
+            if not self.speech.start_recognition():
+                self._speech_action=None
+                self.update_buttons()
+
+    def cancel_dictation(self):
+        if self._speech_action=='capture':
+            self.speech.cancel()
+            self.status.setText('已放弃本次语音输入。')
+
+    def read_aloud(self,text):
+        if not text or self.speech.busy:
+            return False
+        self._speech_action='speech'
+        if self.speech.speak(text):
+            return True
+        self._speech_action=None
+        self.update_buttons()
+        return False
+
+    def toggle_read_aloud(self):
+        if self._speech_action=='speech':
+            self.speech.cancel()
+            self.status.setText('已停止朗读。')
+        else:
+            self.read_aloud(self.latest_speakable_reply())
+
+    def on_speech_state(self,state):
+        if self._speech_action:
+            messages={'starting':'正在启动 Windows 本地语音识别…',
+                'listening':'正在听。说完后点击“结束语音输入”。',
+                'finishing':'正在整理识别结果…','speaking':'正在使用 Windows 本地语音朗读…'}
+            if state in messages:self.status.setText(messages[state])
+            if state=='idle':
+                if self._speech_action=='speech' and self.status.text()==messages['speaking']:
+                    self.status.setText('朗读已结束。')
+                self._speech_action=None
+        self.update_buttons()
+
+    def on_speech_error(self,message):
+        if self._speech_action:
+            self.status.setText(message)
+
+    def insert_recognized_text(self,text):
+        if self._speech_action!='capture' or not self.isVisible() or self.tabs.currentIndex()!=0:
+            return
+        draft=self.composer.toPlainText()
+        separator='\n' if draft and not draft.endswith('\n') else ''
+        available=MAX_INPUT-len(draft)-len(separator)
+        if available<=0:
+            self.status.setText('输入框已满，删减原有文字后可以再试。')
+            return
+        self.composer.setPlainText(draft+separator+text[:available])
+        self.composer.moveCursor(QTextCursor.MoveOperation.End)
+        self.composer.setFocus()
+        self.status.setText('识别文字已加入输入框。检查文字后可点击发送。' if len(text)<=available else '已加入部分识别文字，输入达到长度上限。')
+
+    def on_tab_changed(self,index):
+        if index!=0:self.cancel_dictation()
 
     def update_config_status(self,*args):
         try:present=bool(self.vault.load(self.base_edit.text()))
@@ -168,30 +290,39 @@ class ChatPanel(QWidget):
         if item and not self.client.busy:self.load_conversation(item.data(Qt.ItemDataRole.UserRole))
 
     def load_conversation(self,identifier):
+        self.memory_check.setChecked(False)
         self.conversation_id=identifier;self._turns=self.chats.turns(identifier);self._turn_id=None
         latest=self.chats.latest_plan(identifier)
         self.load_plan(*latest) if latest else self.load_plan(None,None)
         self.refresh_conversations();self.render();self.update_buttons()
 
     def new_conversation(self):
-        if self.client.busy:return
+        if self.client.busy or self._speech_action=='capture':return
+        self.memory_check.setChecked(False)
         self.conversation_id=None;self._turns=[];self._turn_id=None;self.composer.clear();self.load_plan(None,None)
         self.refresh_conversations();self.render();self.status.setText('新对话准备好了。')
 
     def prepare_prompt(self,text,purpose):
-        if self.client.busy:return
+        if self.client.busy or self._speech_action=='capture':return
         context=self.context();task=str(context.get('task') or '')
         if purpose=='plan' and task:text='请帮我拆分这个学习目标：'+task
         self.composer.setPlainText(text);self.purpose.setCurrentIndex(1 if purpose=='plan' else 0);self.composer.setFocus()
 
     def send(self):
-        if self.client.busy:return False
+        if self.client.busy or self._speech_action=='capture':return False
         text=self.composer.toPlainText().strip();purpose=self.purpose.currentData()
         try:
             self.config.validate();key=self.vault.load(self.config.base_url)
             if not key:self.tabs.setCurrentIndex(2);self.status.setText(self.vault.error or '请在这里填写并保存DeepSeek API Key。');return False
             local_context=dict(self.context())
-            messages=build_messages(self._turns,text,local_context if self.context_check.isChecked() else None,purpose)
+            support_memory=''
+            if self.memory_check.isChecked():
+                support_memory=self.read_support_memory()
+                self.memory_check.setChecked(False)
+                if not support_memory or support_memory!=self._memory_preview:
+                    self.update_memory_choice();self.status.setText('陪伴偏好已更新，确认后可重新勾选。');return False
+            messages=build_messages(self._turns,text,local_context if self.context_check.isChecked() else None,purpose,
+                support_memory=support_memory or None)
         except ValueError as error:self.status.setText(str(error));return False
         if not self.conversation_id:self.conversation_id=self.chats.new_conversation(text)
         if not self.conversation_id:self.status.setText(self.chats.error);return False
@@ -208,10 +339,19 @@ class ChatPanel(QWidget):
     def update_buttons(self):
         if not hasattr(self,'send_button'):return
         busy=self.client.busy;length=len(self.composer.toPlainText().strip())
-        self.counter.setText(f'{length} / {MAX_INPUT}');self.send_button.setEnabled(not busy and 0<length<=MAX_INPUT)
-        self.stop_button.setEnabled(busy);self.new_button.setEnabled(not busy);self.conversations.setEnabled(not busy)
+        capturing=self._speech_action=='capture'
+        self.counter.setText(f'{length} / {MAX_INPUT}');self.send_button.setEnabled(not busy and not capturing and 0<length<=MAX_INPUT)
+        self.stop_button.setEnabled(busy);self.new_button.setEnabled(not busy and not capturing)
+        self.conversations.setEnabled(not busy and not capturing)
+        state=self.speech.state
+        self.dictate_button.setText({'starting':'正在启动…','listening':'结束语音输入',
+            'finishing':'正在识别…'}.get(state,'开始语音输入') if capturing else '开始语音输入')
+        self.dictate_button.setEnabled(not busy and (not self.speech.busy or (capturing and state=='listening')))
+        self.cancel_dictation_button.setVisible(capturing)
+        self.read_button.setText('停止朗读' if self._speech_action=='speech' else '朗读回复')
+        self.read_button.setEnabled(self._speech_action=='speech' or (not busy and not self.speech.busy and bool(self.latest_speakable_reply())))
         self.composer.setReadOnly(busy);self.purpose.setEnabled(not busy)
-        for button in self.quick_buttons:button.setEnabled(not busy)
+        for button in self.quick_buttons:button.setEnabled(not busy and not capturing)
         if hasattr(self,'config_fields'):
             for widget in (self.config_fields,self.save_config_button,self.test_button,self.remove_key):widget.setEnabled(not busy)
         if hasattr(self,'save_steps'):
@@ -244,11 +384,13 @@ class ChatPanel(QWidget):
             identifier=self._turn_id;self.finish_turn('complete',answer);self.load_plan(identifier,plan);self.tabs.setCurrentIndex(1)
             self.reply_for_pet.emit(f'已整理好{len(plan["steps"])}个学习步骤，\n可以先从一个小目标开始。')
             self.status.setText('步骤已保存，可以修改后选择一项放到学习面板。')
+            if self.auto_read.isChecked() and self.isVisible():self.read_aloud(plan_text(plan))
         else:
             self.finish_turn('complete',answer)
             brief=re.sub(r'^[\s#*\-\d.]+','',answer.strip()).split('\n')[0][:85]
             self.reply_for_pet.emit(brief or '我把建议写在聊天面板里啦。')
             self.status.setText('回答已达到本次长度上限，可以继续追问。' if reason=='length' else '回答已保存。')
+            if self.auto_read.isChecked() and self.isVisible():self.read_aloud(answer)
 
     def on_error(self,message):
         if self._testing:self._testing=False;self.update_buttons()
@@ -315,10 +457,17 @@ class ChatPanel(QWidget):
         self.status.setText('已放到学习面板，准备好后点击“开始专注”。')
 
     def shutdown(self):
+        if self._speech_action=='capture':
+            self.status.setText('已放弃本次语音输入。')
+        if self._speech_action:self.speech.shutdown()
+        self.memory_check.setChecked(False)
         self.client.stop();self.save_timer.stop();self.render_timer.stop()
         if self._turn_id:self.finish_turn('stopped',self._answer)
 
     def showEvent(self,event):
         self.update_context_label();self.update_config_status();self.context_timer.start()
-    def hideEvent(self,event):self.context_timer.stop()
+    def hideEvent(self,event):
+        self.context_timer.stop()
+        if self._speech_action=='capture':self.cancel_dictation()
+        elif self._speech_action=='speech':self.speech.cancel()
     def closeEvent(self,event):self.shutdown();self.hide();event.ignore()

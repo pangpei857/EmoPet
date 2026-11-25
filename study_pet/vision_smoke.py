@@ -5,15 +5,18 @@ import statistics
 import tempfile
 import time
 
+from .vision_profiles import BODY_POINT_MIN_SCORE, DEFAULT_VISION_PROFILE, VISION_PROFILES
 
-def run(companion,preview=None,fixtures=None):
+
+def run(companion,preview=None,fixtures=None,model_profile=DEFAULT_VISION_PROFILE):
     import cv2
     import numpy as np
     from PySide6.QtTest import QTest
     from .vision import VisionEngine
 
+    profile=VISION_PROFILES[model_profile]
     results=[];portrait=None;phone_image=None
-    with VisionEngine() as engine:
+    with VisionEngine(detector_file=profile.detector_file) as engine:
         rgb,empty=engine.analyze(np.zeros((480,640,3),dtype=np.uint8))
         assert not empty.phones and not empty.faces
         if fixtures:
@@ -33,6 +36,7 @@ def run(companion,preview=None,fixtures=None):
                 if observation.phones and phone_image is None:phone_image=bgr
             assert phone_image is not None,'No COCO phone fixture was detected'
     companion.show_camera();panel=companion.camera_panel;controller=companion.vision_controller
+    panel.model_profile.setCurrentIndex(panel.model_profile.findData(model_profile))
     # This check explicitly enters video-test mode: no automatic pet feedback.
     frames=[];observations=[];frame_times=[];result_times=[]
     def receive_frame(item):frames.append(item);frame_times.append(time.monotonic())
@@ -47,9 +51,17 @@ def run(companion,preview=None,fixtures=None):
         for _ in range(300):writer.write(image)
         writer.release();panel._video_mode=True
         try:
-            assert controller.start(str(path))
+            assert controller.start(str(path),model_profile=model_profile)
             deadline=time.monotonic()+35
-            while (len(frames)<60 or len(observations)<15 or not any(o.phone_timestamp is not None for o in observations)) and time.monotonic()<deadline and controller.state!='error':QTest.qWait(10)
+            needs_pose=profile.body_model is not None and portrait is not None
+            def visible_points(observation):
+                return sum(point[2]>=BODY_POINT_MIN_SCORE for point in observation.body_points)
+            while time.monotonic()<deadline and controller.state!='error':
+                enough_frames=len(frames)>=60 and len(observations)>=15
+                has_detection=any(o.phone_timestamp is not None for o in observations)
+                has_pose=not needs_pose or any(visible_points(o)>=4 for o in observations)
+                if enough_frames and has_detection and has_pose:break
+                QTest.qWait(10)
             intervals=[(b-a)*1000 for a,b in zip(frame_times[5:],frame_times[6:])]
             phone_times=[o.phone_ms for o in observations if o.phone_ms>0]
             metrics={'preview_frames':len(frames),'observations':len(observations),
@@ -60,13 +72,19 @@ def run(companion,preview=None,fixtures=None):
                 'median_face_age_ms':round(statistics.median((t-o.timestamp)*1000 for t,o in zip(result_times,observations)),1) if observations else None}
             if observations:
                 metrics.update(face_hz=round(observations[-1].face_fps,1),phone_hz=round(observations[-1].phone_fps,1))
+            if profile.body_model is not None:
+                body_times=[o.body_ms for o in observations if o.person_fresh and o.body_ms>0]
+                metrics.update(max_visible_body_points=max(map(visible_points,observations),default=0),
+                               median_body_ms=round(statistics.median(body_times),1) if body_times else None)
             if preview:
                 target=Path(preview);target.parent.mkdir(parents=True,exist_ok=True)
                 panel.grab().save(str(target))
-                target.with_suffix('.json').write_text(json.dumps({'pipeline':metrics,'fixtures':results},indent=2),encoding='utf-8')
+                target.with_suffix('.json').write_text(json.dumps({'model_profile':model_profile,'pipeline':metrics,'fixtures':results},indent=2),encoding='utf-8')
             assert len(frames)>=60,controller.message
             assert len(observations)>=15,'Independent feature analysis did not publish results'
             assert phone_times,'Independent phone analysis did not publish results'
+            assert profile.label in controller.message, 'Worker did not start the requested profile'
+            if needs_pose:assert metrics['max_visible_body_points']>=4, 'Body keypoints were not delivered to the preview'
             if portrait is not None:assert any(o.has_primary and o.brow_reliable for o in observations),'Async primary face/blendshape tracking failed'
             # Compare against the actual expensive model, not the arbitrary
             # face-worker rate: a 15 Hz preview and 15 Hz face worker may be

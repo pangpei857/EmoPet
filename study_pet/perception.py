@@ -4,6 +4,8 @@ import math
 import statistics
 import time
 
+from .vision_profiles import DEFAULT_VISION_PROFILE, VISION_PROFILES
+
 
 @dataclass(frozen=True)
 class Box:
@@ -83,6 +85,8 @@ class Observation:
     person_fresh: bool = False
     frame_ok: bool = True
     brow_active: bool | None = None
+    body_points: tuple[tuple[float, float, float], ...] = ()
+    body_ms: float = 0.0
 
     @property
     def user_state(self):
@@ -116,6 +120,7 @@ class Observation:
             and abs(self.timestamp-self.phone_timestamp)<=.75)
         return replace(self,face_fresh=face_fresh,phone_fresh=phone_fresh,
             person_fresh=self.person_fresh and phone_fresh,
+            body_points=self.body_points if self.person_fresh and phone_fresh and self.frame_ok else (),
             brow_valid=self.brow_valid and face_fresh,
             brow_score=self.brow_score if face_fresh else 0.,
             eyes_down=self.eyes_down if face_fresh else 0.)
@@ -154,6 +159,7 @@ class VisionSettings:
     learning_mode: str = 'mixed'
     presence_seconds: int = 12
     record_behaviors: bool = True
+    model_profile: str = DEFAULT_VISION_PROFILE
 
     @classmethod
     def from_dict(cls,data):
@@ -170,6 +176,9 @@ class VisionSettings:
             value=data.get(key)
             if isinstance(value,(int,float)) and math.isfinite(value):setattr(result,key,max(lo,min(hi,float(value))))
         if data.get('learning_mode') in {'computer','paper','mixed'}:result.learning_mode=data['learning_mode']
+        model_profile = data.get('model_profile')
+        if isinstance(model_profile, str) and model_profile in VISION_PROFILES:
+            result.model_profile = model_profile
         return result
 
     def as_dict(self):return dict(vars(self))
@@ -193,7 +202,7 @@ class FeedbackEvent:
 class ReminderGate:
     """Temporary user choices; monotonic deadlines do not change saved settings."""
     def __init__(self,clock=time.monotonic):
-        self.clock=clock;self.snooze_until=0.;self.phone_until=0.;self.care_until=0.;self.head_until=0.
+        self.clock=clock;self.snooze_until=0.;self.phone_until=0.;self.care_until=0.;self.head_until=0.;self.sigh_until=0.
 
     @property
     def snoozed(self):return self.clock()<self.snooze_until
@@ -204,21 +213,25 @@ class ReminderGate:
     @property
     def head_paused(self):return self.clock()<self.head_until
 
+    @property
+    def sigh_paused(self):return self.clock()<self.sigh_until
+
     def apply(self,response,kind):
         now=self.clock()
         if response=='research' and kind=='phone':self.phone_until=max(self.phone_until,now+300)
         elif response=='thinking' and kind=='care':self.care_until=max(self.care_until,now+600)
+        elif response=='thinking' and kind=='sigh':self.sigh_until=max(self.sigh_until,now+600)
         elif response=='paper' and kind=='head_down':self.head_until=max(self.head_until,now+600)
         elif response=='snooze':self.snooze_until=max(self.snooze_until,now+600)
         elif response=='false_positive':
-            name={'phone':'phone_until','head_down':'head_until'}.get(kind,'care_until')
+            name={'phone':'phone_until','head_down':'head_until','sigh':'sigh_until'}.get(kind,'care_until')
             setattr(self,name,max(getattr(self,name),now+60))
 
     def toggle_snooze(self):self.snooze_until=0. if self.snoozed else self.clock()+600
 
     def reset_round(self):
         # 'Looking something up' belongs to the current learning round.
-        self.phone_until=0.;self.care_until=0.;self.head_until=0.
+        self.phone_until=0.;self.care_until=0.;self.head_until=0.;self.sigh_until=0.
 
 
 @dataclass

@@ -48,11 +48,12 @@ class RateMeter:
 
 
 class ParallelAnalysis:
-    """Independent face/hand (15 Hz) and phone (3 Hz) consumers."""
-    def __init__(self,frames,features,phone,stop,emit):
+    """Independent face/hand (15 Hz) and object/body (3 Hz) consumers."""
+    def __init__(self,frames,features,phone,stop,emit,*,body=None):
         self.frames=frames;self.features=features;self.phone=phone
         self.stop=stop;self.emit=emit;self.phone_lock=threading.Lock()
         self.phone_result=None;self.threads=[]
+        self.body = body
 
     def start(self):
         for name,target in (('vision-face-hand',self.face_loop),('vision-phone',self.phone_loop)):
@@ -74,7 +75,14 @@ class ParallelAnalysis:
             sequence=frame.sequence;started=time.monotonic()
             if hasattr(self.phone,'detect_objects'):phones,persons=self.phone.detect_objects(frame.image)
             else:phones,persons=self.phone.detect(frame.image),None
-            result=(frame.timestamp,phones,(time.monotonic()-started)*1000,rate.tick(started),persons)
+            object_finished = time.monotonic()
+            body_points, body_ms = (), 0.
+            # Run pose on the exact frame that produced the person crop. A
+            # crowded frame never gets assigned an arbitrary student's skeleton.
+            if self.body is not None and persons and len(persons) == 1 and not self.stop.is_set():
+                body_points = self.body.estimate(frame.image, persons[0])
+                body_ms = (time.monotonic() - object_finished) * 1000
+            result=(frame.timestamp,phones,(object_finished-started)*1000,rate.tick(started),persons,body_points,body_ms)
             with self.phone_lock:self.phone_result=result
             self.stop.wait(max(0.,1/3-(time.monotonic()-started)))
 
@@ -90,6 +98,7 @@ class ParallelAnalysis:
             if phone is not None:
                 values.update(phone_timestamp=phone[0],phones=phone[1],phone_ms=phone[2],phone_fps=phone[3])
                 if len(phone)>4 and phone[4] is not None:values.update(persons=phone[4],person_fresh=True)
+                if len(phone)>6:values.update(body_points=phone[5],body_ms=phone[6])
             observation=replace(observation,**values).freshened(time.monotonic())
             observation=tracker.update(observation)
             if not self.stop.is_set():self.emit({'type':'observation','observation':observation})

@@ -1,7 +1,7 @@
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from math import floor
 
 from study_pet.perception import Box,FaceFeatures,Observation
@@ -55,6 +55,34 @@ class PipelineTests(unittest.TestCase):
                 self.assertTrue(stop.wait(1.))
             self.assertEqual([item['type'] for item in messages],['error'])
         finally:self.assertTrue(pipeline.close())
+
+    def test_body_receives_the_same_single_person_frame_and_expires_with_it(self):
+        person = Box(.2,.15,.8,.88,.94)
+        pose = tuple((.5,.5,.9) for _ in range(17))
+        image = object()
+        estimator = Mock()
+        estimator.estimate.return_value = pose
+        for people in ((person,), (person, person)):
+            with self.subTest(people=len(people)):
+                detector = Mock()
+                detector.detect_objects.return_value = (), people
+                stop = Mock()
+                stop.is_set.side_effect = (False, False, True) if len(people)==1 else (False, True)
+                frames = Mock()
+                frames.next.return_value = CapturedFrame(1,10.,image)
+                estimator.reset_mock()
+                pipeline = ParallelAnalysis(frames,None,detector,stop,Mock(),body=estimator)
+                pipeline.phone_loop()
+                if len(people) == 1:
+                    estimator.estimate.assert_called_once_with(image,person)
+                    self.assertEqual(pipeline.phone_result[5],pose)
+                else:
+                    estimator.estimate.assert_not_called()
+                    self.assertEqual(pipeline.phone_result[5],())
+        observation = Observation(10.1,phone_timestamp=10.,asynchronous=True,
+                                  person_fresh=True,persons=(person,),body_points=pose)
+        self.assertEqual(observation.freshened(10.2).body_points,pose)
+        self.assertEqual(observation.freshened(11.).body_points,())
 
     def test_face_resolution_receives_merged_three_hz_phone_results(self):
         stop=threading.Event();output=[]

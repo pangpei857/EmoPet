@@ -3,6 +3,7 @@ numpy==2.5.4
 opencv-contrib-python==5.0.0.93
 onnxruntime==1.31.1
 mediapipe==1.2.2
+sounddevice==0.5.6
 cv2-enumerate-cameras==1.4.0
 winrt-Windows.Media.Control==4!10.0.28000.2957
 winrt-Windows.Foundation==4!10.0.28000.2957

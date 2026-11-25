@@ -11,7 +11,9 @@ import cv2_enumerate_cameras
 camera_libs = Path(cv2_enumerate_cameras.__file__).parent.parent/'cv2_enumerate_cameras.libs'
 if camera_libs.is_dir():
     camera_binaries += [(str(path),'cv2_enumerate_cameras.libs') for path in camera_libs.glob('*.dll')]
-model_files = ['face_landmarker.task','hand_landmarker.task','phone_yolov8s.onnx','manifest.json','NOTICE.md','ULTRALYTICS-LICENSE.txt']
+model_files = ['face_landmarker.task','hand_landmarker.task','phone_yolov8s.onnx','manifest.json','NOTICE.md','ULTRALYTICS-LICENSE.txt',
+               'phone_yolo26s.onnx','pose_landmarker_lite.task','rtmpose_s_body7.onnx','MMPOSE-LICENSE.txt',
+               'yamnet.tflite','YAMNET-NOTICE.md','YAMNET-LICENSE.txt']
 model_datas = [(str(Path('assets/models')/name),'assets/models') for name in model_files]
 
 a = Analysis(

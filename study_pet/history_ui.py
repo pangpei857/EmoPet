@@ -153,7 +153,7 @@ class HistoryPanel(QWidget):
             STATE_LABELS.get(s['status'],s['status']),f"{s['reminder_count']} 次 · 误报 {s['correction_count']}"],selected['id'] if selected else None)
         self._reminders=self.history.reminders(start,end)
         self.fill(self.reminders_table,self._reminders,lambda r:[display_time(r['created_at']),KIND_LABELS.get(r['kind'],r['kind']),
-            {'example':'示例','coach':'学习计时'}.get(r['source'],'视觉识别'),r['task'] or ('示例体验' if r['source']=='example' else '未关联学习轮次'),
+            {'example':'示例','coach':'学习计时','audio':'本地音频'}.get(r['source'],'视觉识别'),r['task'] or ('示例体验' if r['source']=='example' else '未关联学习轮次'),
             RESPONSE_LABELS.get(r['response'],'尚未回应')],selected_event['id'] if selected_event else None)
         self.select_session();self.select_reminder()
         legacy='旧版当日汇总已保留；旧版轮次没有详细记录。' if summary['legacy_seconds'] or summary['legacy_completed'] else ''

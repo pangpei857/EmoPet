@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QAbstractSpinBox,QCheckBox,QComboBox,QDoubleSpinB
 from .perception import BrowCalibration, ReminderPolicy, VisionSettings, ReminderGate, FeedbackEvent
 from .vision_behavior import BrowSignal, BehaviorTracker, head_down
 from .face_tracking import FaceDiagnostics
+from .vision_profiles import BODY_LINKS, BODY_POINT_MIN_SCORE, DEFAULT_VISION_PROFILE, VISION_PROFILES
 
 FACE_REASONS={
     'acquiring_primary':'正在确认主用户','primary_missing':'主用户暂时离开',
@@ -98,6 +99,16 @@ class PreviewCanvas(QWidget):
         o=self.observation
         if o is None:return
         o=o.freshened(time.monotonic())
+        if o.person_fresh and len(o.body_points) == 17 and o.user_state != 'multiple':
+            landmarks = [point(x,y) if score >= BODY_POINT_MIN_SCORE else None for x,y,score in o.body_points]
+            p.setPen(QPen(QColor('#C4AAFF'),2))
+            for a,b in BODY_LINKS:
+                if landmarks[a] is not None and landmarks[b] is not None:
+                    p.drawLine(landmarks[a],landmarks[b])
+            p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor('#C4AAFF'))
+            for landmark in landmarks:
+                if landmark is not None:p.drawEllipse(landmark,3,3)
+        p.setBrush(Qt.BrushStyle.NoBrush)
         for index,face in enumerate(o.faces if o.face_fresh else ()):
             excluded=index in o.filtered_faces
             primary=o.has_primary and (index==o.primary_face or o.face_state is None)
@@ -151,6 +162,17 @@ class CameraPanel(QWidget):
         self.video.clicked.connect(self.open_video)
         devices.addWidget(self.devices,1);devices.addWidget(self.refresh);devices.addWidget(self.start);devices.addWidget(self.video)
         outer.addLayout(devices)
+        models = QHBoxLayout()
+        models.addWidget(QLabel('识别方案'))
+        self.model_profile = QComboBox()
+        self.model_profile.setAccessibleName('识别方案')
+        for key, profile in VISION_PROFILES.items():
+            self.model_profile.addItem(profile.label, key)
+        self.model_profile.setCurrentIndex(max(0, self.model_profile.findData(self.settings.model_profile)))
+        self.settings.model_profile = self.model_profile.currentData()
+        self.model_profile.setToolTip('YOLO 检测人体和手机。MediaPipe Pose 或 RTMPose 绘制身体关键点。切换前请关闭当前采集。')
+        models.addWidget(self.model_profile,1)
+        outer.addLayout(models)
         columns=QHBoxLayout();columns.setSpacing(18)
         preview_col=QVBoxLayout();preview_col.setSpacing(6)
         self.preview=PreviewCanvas();preview_col.addWidget(self.preview,1)
@@ -227,6 +249,7 @@ class CameraPanel(QWidget):
         outer.addWidget(self.notice)
         for control in (self.phone,self.care,self.head,self.focus_only,self.record):control.toggled.connect(self.save_settings)
         self.learning_mode.currentIndexChanged.connect(self.save_settings)
+        self.model_profile.currentIndexChanged.connect(self.save_settings)
         for control in (self.phone_duration,self.care_duration,self.cooldown,self.brow):control.valueChanged.connect(self.save_settings)
         controller.state_changed.connect(self.on_state)
         controller.devices_changed.connect(self.on_devices)
@@ -255,23 +278,31 @@ class CameraPanel(QWidget):
         device=self.devices.currentData()
         if device:
             self._video_mode=False;self.policy.reset_evidence()
-            self.controller.start(device['index'],device['backend'])
+            options = self.model_options()
+            alternatives=device.get('alternatives',())
+            if alternatives:options['alternatives']=alternatives
+            self.controller.start(device['index'],device['backend'],**options)
+
+    def model_options(self):
+        profile = self.settings.model_profile
+        return {} if profile == DEFAULT_VISION_PROFILE else {'model_profile': profile}
 
     def open_video(self):
         if self.controller.active:return
         path,_=QFileDialog.getOpenFileName(self,'选择本地视频进行识别测试','','视频文件 (*.mp4 *.avi *.mov *.mkv *.webm)')
         if path:
-            self._video_mode=True;self.policy.reset_evidence();self.controller.start(path)
+            self._video_mode=True;self.policy.reset_evidence();self.controller.start(path,**self.model_options())
 
     def on_state(self,state,text):
-        active=state in {'starting','running','stopping'}
+        active=state in {'starting','previewing','running','stopping'}
         self.status.setText(text)
         self.start.setText('关闭视频' if self._video_mode and active else '关闭摄像头' if active else '开启摄像头')
         self.start.setEnabled(state!='stopping' and (active or self.devices.currentData() is not None))
         self.video.setEnabled(not active);self.refresh.setEnabled(not active);self.devices.setEnabled(not active)
+        self.model_profile.setEnabled(not active)
         self.calibrate.setEnabled(state=='running' and not self._video_mode)
         self.calibrate_frown.setEnabled(state=='running' and not self._video_mode and self.settings.baseline is not None)
-        if state!='running':
+        if state not in {'previewing','running'}:
             self.flush_behaviors();self.reset_behaviors()
             self.presence_changed.emit({'state':'unknown','timestamp':time.monotonic(),
                 'reason':'摄像头未运行','text':'未观测 · '+text})
@@ -281,12 +312,14 @@ class CameraPanel(QWidget):
             self._last_diagnostics_at=0.
             self.policy.reset_evidence();self.calibration=None
         if state in {'off','error'}:self.notice.setText(text)
+        elif state=='previewing':self.notice.setText('画面已连接，识别功能启动后可校准和提醒。')
         elif state=='running':self.notice.setText('视频测试中：仅显示识别结果，不自动提醒。' if self._video_mode else '已开启本地识别，等待稳定的观察结果。')
 
     def save_settings(self,*args):
         s=self.settings
         s.phone_enabled=self.phone.isChecked();s.care_enabled=self.care.isChecked();s.focus_only=self.focus_only.isChecked()
         s.head_enabled=self.head.isChecked();s.learning_mode=self.learning_mode.currentData()
+        s.model_profile=self.model_profile.currentData()
         if s.record_behaviors!=self.record.isChecked():self.flush_behaviors();self.reset_behaviors()
         s.record_behaviors=self.record.isChecked()
         s.phone_seconds=self.phone_duration.value();s.care_seconds=self.care_duration.value()
@@ -377,7 +410,7 @@ class CameraPanel(QWidget):
         if self._observation is not None:self.preview.update()
 
     def on_frame(self,item):
-        if self.controller.state!='running':return
+        if self.controller.state not in {'previewing','running'}:return
         now=time.monotonic()
         if self._last_preview_at is not None and now>self._last_preview_at:
             current=1/(now-self._last_preview_at)
@@ -486,11 +519,21 @@ class CameraPanel(QWidget):
             elif feature.yaw is not None and feature.pitch is not None:
                 delta='尚未校准学习姿态' if self.settings.neutral_pitch is None else f'相对俯仰 {feature.pitch-self.settings.neutral_pitch:+.0f}°'
                 self.details.setText(self.details.text()+f'\n当前左右 {feature.yaw:.0f}° · {delta}')
+        if VISION_PROFILES[self.settings.model_profile].body_model is not None:
+            visible=sum(score >= BODY_POINT_MIN_SCORE for _,_,score in o.body_points)
+            if o.user_state=='multiple' or (o.person_fresh and len(o.persons)>1):
+                body='多人入镜，等待单人'
+            elif visible:
+                body=f'{visible} / 17 个关键点'
+            else:
+                body='等待可识别的单人姿态'
+            self.details.setText(self.details.text()+f'\n身体姿态：{body}')
         age=max(0.,(now-o.timestamp)*1000) if o.asynchronous else o.inference_ms
+        body_speed=f' / 身体 {o.body_ms:.0f} ms' if o.body_ms>0 else ''
         self.performance.setText(f'预览 {self._preview_fps:.0f} 帧/秒 · 显示延迟 {self._preview_delay:.0f} ms · 面部结果 {age:.0f} ms\n'
-            f'面部 {o.face_ms:.0f} / 手部 {o.hand_ms:.0f} / 手机 {o.phone_ms:.0f} ms · 检测 {o.face_fps:.1f} / {o.phone_fps:.1f} 次/秒')
+            f'面部 {o.face_ms:.0f} / 手部 {o.hand_ms:.0f} / 物体 {o.phone_ms:.0f} ms{body_speed} · 检测 {o.face_fps:.1f} / {o.phone_fps:.1f} 次/秒')
         self.performance.setToolTip('显示延迟：应用读取画面到界面接收，不含摄像头硬件内部延迟。\n'
-            '面部结果：对应画面被读取到现在的时间。\n模型耗时依次为面部、手部、手机；检测频率依次为面部/手部、手机。')
+            '面部结果：对应画面被读取到现在的时间。\n检测频率依次为面部/手部、物体/身体。')
         focus,visible=self.context();s=self.settings
         common=None
         if self._video_mode:common='视频测试，仅显示结果'

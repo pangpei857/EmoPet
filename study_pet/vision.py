@@ -9,6 +9,8 @@ import numpy as np
 from .perception import Box, FaceFeatures, Observation
 
 MODEL_DIR=Path(__file__).resolve().parents[1]/'assets'/'models'
+PHONE_MIN_SCORE = .38
+PERSON_MIN_SCORE = .45
 
 
 def _decode_class(output,width,height,ratio,pad_x,pad_y,category,threshold):
@@ -35,22 +37,53 @@ def _decode_class(output,width,height,ratio,pad_x,pad_y,category,threshold):
                  for i in np.asarray(keep).reshape(-1))
 
 
-def decode_phones(output,width,height,ratio,pad_x,pad_y,threshold=.38):
+def decode_phones(output,width,height,ratio,pad_x,pad_y,threshold=PHONE_MIN_SCORE):
     return _decode_class(output,width,height,ratio,pad_x,pad_y,67,threshold)
 
 
-def decode_persons(output,width,height,ratio,pad_x,pad_y,threshold=.45):
+def decode_persons(output,width,height,ratio,pad_x,pad_y,threshold=PERSON_MIN_SCORE):
     """Person boxes assist occupancy, never identity or liveness verification."""
     return _decode_class(output,width,height,ratio,pad_x,pad_y,0,threshold)
 
 
+def decode_yolo26(output, width, height, ratio, pad_x, pad_y):
+    """Decode the end-to-end YOLO26 Detect output [batch, detections, 6]."""
+    output = np.asarray(output)
+    if output.ndim != 3 or output.shape[0] != 1 or output.shape[2] != 6:
+        raise ValueError('Unexpected YOLO26 detection output')
+
+    phones, persons = [], []
+    for x1, y1, x2, y2, score, category in output[0]:
+        if category == 67 and PHONE_MIN_SCORE <= score <= 1.:
+            boxes = phones
+        elif category == 0 and PERSON_MIN_SCORE <= score <= 1.:
+            boxes = persons
+        else:
+            continue
+        if not np.isfinite([x1, y1, x2, y2]).all():
+            continue
+        x1 = max(0., min(width, (float(x1) - pad_x) / ratio))
+        y1 = max(0., min(height, (float(y1) - pad_y) / ratio))
+        x2 = max(0., min(width, (float(x2) - pad_x) / ratio))
+        y2 = max(0., min(height, (float(y2) - pad_y) / ratio))
+        if x2 - x1 >= 5 and y2 - y1 >= 8:
+            boxes.append(Box(x1/width, y1/height, x2/width, y2/height, float(score)))
+    return tuple(phones), tuple(persons)
+
+
 class PhoneDetector:
     def __init__(self,path=MODEL_DIR/'phone_yolov8s.onnx'):
+        if not Path(path).is_file():
+            raise FileNotFoundError(f'缺少检测模型 {Path(path).name}。请使用完整的应用文件夹。')
         import onnxruntime as ort
         options=ort.SessionOptions();options.intra_op_num_threads=2;options.inter_op_num_threads=1
         self.session=ort.InferenceSession(str(path),sess_options=options,providers=['CPUExecutionProvider'])
         input_info=self.session.get_inputs()[0]
         self.input_name=input_info.name;self.size=int(input_info.shape[2])
+        output_shape = self.session.get_outputs()[0].shape
+        self.end_to_end = len(output_shape) == 3 and output_shape[-1] == 6
+        if not self.end_to_end and (len(output_shape) != 3 or output_shape[1] != 84):
+            raise ValueError(f'Unsupported detection output: {output_shape}')
 
     def detect(self,bgr):
         return self.detect_objects(bgr)[0]
@@ -63,6 +96,8 @@ class PhoneDetector:
         image[top:top+nh,left:left+nw]=cv2.resize(bgr,(nw,nh),interpolation=cv2.INTER_LINEAR)
         tensor=np.ascontiguousarray(image[:,:,::-1].transpose(2,0,1)[None],dtype=np.float32)/255.
         output=self.session.run(None,{self.input_name:tensor})[0]
+        if self.end_to_end:
+            return decode_yolo26(output, w, h, ratio, left, top)
         return (decode_phones(output,w,h,ratio,left,top),decode_persons(output,w,h,ratio,left,top))
 
 
@@ -107,16 +142,16 @@ def face_measurements(landmarks,matrix,bgr,box):
 
 
 class VisionEngine:
-    def __init__(self,model_dir=MODEL_DIR,include_phone=True):
+    def __init__(self,model_dir=MODEL_DIR,include_phone=True,*,detector_file='phone_yolov8s.onnx'):
         import mediapipe as mp
         self.mp=mp;self.face=None;self.hand=None;self.phone=None;self.warnings=[]
         cv2.setNumThreads(2)
-        for name,label in [('phone_yolov8s.onnx','手机检测'),('face_landmarker.task','面部检测'),('hand_landmarker.task','手部检测')]:
+        for name,label in [('face_landmarker.task','面部检测'),('hand_landmarker.task','手部检测')]:
             if not (model_dir/name).is_file():raise FileNotFoundError(f'{label}模型缺失，请重新安装完整的应用文件夹。')
         # Read model buffers so MediaPipe can run from Chinese Windows paths.
         base=mp.tasks.BaseOptions;vision=mp.tasks.vision
         try:
-            if include_phone:self.phone=PhoneDetector(model_dir/'phone_yolov8s.onnx')
+            if include_phone:self.phone=PhoneDetector(model_dir/detector_file)
             self.face=vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
                 base_options=base(model_asset_buffer=(model_dir/'face_landmarker.task').read_bytes()),
                 running_mode=vision.RunningMode.VIDEO,num_faces=2,output_face_blendshapes=True,
