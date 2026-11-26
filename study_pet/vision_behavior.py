@@ -172,7 +172,13 @@ class BehaviorTracker:
         else:self.unknown_since=None
         presence_type={'present':'presence','away':'away','unknown':'unknown'}[state]
         for kind in ('presence','away','unknown'):
-            if kind!=presence_type:self._close(kind)
+            previous = self.segments.get(kind)
+            if kind != presence_type and previous is not None:
+                # Consecutive observations share a transition boundary. A gap
+                # or primary-user change has already closed the old interval.
+                previous['end'] = now
+                previous['duration'] += dt
+                self._close(kind)
         self._track(presence_type,True,now,dt if presence_type in self.segments else 0.,evidence={'reason':reason})
         phone=o.phone_near_hand if o.has_primary and o.phone_fresh and o.face_fresh else None
         care=(o.brow_active if o.brow_active is not None else o.brow_score>=self.settings.brow_threshold) if o.brow_reliable else None

@@ -130,6 +130,21 @@ class BehaviorIntervalTests(unittest.TestCase):
         self.assertEqual(len(closed),2)
         self.assertEqual(sum(e['duration'] for e in closed),8.)
 
+    def test_workstation_intervals_share_boundaries_but_stop_at_capture_gaps(self):
+        self.tracker.update(observed(0.))
+        events = []
+        for index in range(1, 25):
+            events += self.tracker.update(Observation(index * .25, person_fresh=True))
+        events += self.tracker.update(observed(6.25))
+        events += self.tracker.update(observed(10.))
+        closed = [event for event in events if event['status'] == 'closed']
+
+        self.assertEqual([event['type'] for event in closed], ['presence', 'unknown', 'away', 'presence'])
+        self.assertEqual([event['duration'] for event in closed], [.25, 5., 1., 0.])
+        for left, right in zip(closed, closed[1:]):
+            self.assertEqual(left['ended_at'], right['started_at'])
+        self.assertNotEqual(closed[-1]['ended_at'], self.tracker.flush()[-1]['started_at'])
+
     def test_unchanged_sample_time_is_not_counted_again(self):
         self.tracker.update(observed(0.,phone=True))
         self.tracker.update(observed(.5,phone=True))

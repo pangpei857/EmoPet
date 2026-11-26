@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (QAbstractItemView,QCheckBox,QComboBox,QDateEdit,Q
 from .history import BEHAVIOR_LABELS,KIND_LABELS,RESPONSE_LABELS,STATE_LABELS,display_time,local_day,response_allowed
 
 
+WORKSTATION_KINDS = {'presence', 'away', 'unknown'}
+
+
 def duration_text(seconds):
     seconds=max(0,int(seconds));minutes,seconds=divmod(seconds,60);hours,minutes=divmod(minutes,60)
     return f'{hours}时 {minutes}分 {seconds}秒' if hours else f'{minutes}分 {seconds}秒'
@@ -99,16 +102,29 @@ class HistoryPanel(QWidget):
 
     def _build_behaviors(self):
         page=QWidget();layout=QVBoxLayout(page)
-        hint=QLabel('显示选中学习轮次的观测片段。行为记录独立于提醒；未知不算离位，手机用途由你确认。')
-        hint.setWordWrap(True);layout.addWidget(hint)
+        filters = QHBoxLayout()
+        self.behavior_filter = QComboBox()
+        self.behavior_filter.addItem('全部行为', 'all')
+        self.behavior_filter.addItem('工位状态', 'workstation')
+        filters.addWidget(self.behavior_filter)
+        filters.addStretch()
+        layout.addLayout(filters)
+        self.behavior_hint = QLabel()
+        self.behavior_hint.setWordWrap(True)
+        layout.addWidget(self.behavior_hint)
         self.behavior_table=self.table(['开始','结束','行为','有效时长','状态','你的标记'])
         self.behavior_table.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeMode.Stretch)
         self.behavior_table.itemSelectionChanged.connect(self.select_behavior);layout.addWidget(self.behavior_table,1)
+        self.behavior_detail = QLabel()
+        self.behavior_detail.setTextFormat(Qt.TextFormat.PlainText)
+        self.behavior_detail.setWordWrap(True)
+        layout.addWidget(self.behavior_detail)
         row=QHBoxLayout();self.behavior_buttons={}
         for key,label in [('false_positive','标记误报'),('research','用于查资料'),('thinking','正在思考'),('paper','看书写字'),(None,'恢复未确认')]:
             button=QPushButton(label);button.clicked.connect(lambda checked=False,k=key:self.correct_selected_behavior(k))
             row.addWidget(button);self.behavior_buttons[key]=button
         layout.addLayout(row);self.tabs.addTab(page,'行为时间线')
+        self.behavior_filter.currentIndexChanged.connect(self.refresh_behaviors)
 
     @staticmethod
     def table(headers):
@@ -249,14 +265,29 @@ class HistoryPanel(QWidget):
     def refresh_behaviors(self):
         if not hasattr(self,'behavior_table'):return
         current=self.selected(self.behavior_table,self._behaviors);session=self.selected(self.sessions_table,self._sessions)
-        self._behaviors=self.history.behaviors(session_id=session['id']) if session else []
+        events=self.history.behaviors(session_id=session['id']) if session else []
+        self._behaviors = [event for event in events if event['kind'] not in WORKSTATION_KINDS or event['duration'] > 0]
+        if self.behavior_filter.currentData() == 'workstation':
+            self._behaviors = [event for event in self._behaviors if event['kind'] in WORKSTATION_KINDS]
+            self.behavior_hint.setText('显示所选轮次的在位、离位和无法判断时段。未观测时长可在学习小结查看。')
+        else:
+            self.behavior_hint.setText('显示所选轮次的行为片段，包括工位状态与其他行为。')
         self.fill(self.behavior_table,self._behaviors,lambda b:[display_time(b['started_at']),display_time(b['ended_at']),
-            BEHAVIOR_LABELS.get(b['kind'],b['kind']),duration_text(b['duration']),
+            BEHAVIOR_LABELS['unknown'] if b['kind']=='away' and b['feedback']=='false_positive' else BEHAVIOR_LABELS.get(b['kind'],b['kind']),
+            duration_text(b['duration']),
             '进行中' if b['status']=='ongoing' else '已结束',RESPONSE_LABELS.get(b['feedback'],'未确认')],current['id'] if current else None)
         self.select_behavior()
 
     def select_behavior(self):
         event=self.selected(self.behavior_table,self._behaviors)
+        if not self._behaviors:
+            self.behavior_detail.setText('所选轮次暂无记录。')
+        else:
+            evidence = event['evidence'] if event and event['kind'] in WORKSTATION_KINDS else None
+            reason = evidence.get('reason', '') if isinstance(evidence, dict) else ''
+            if event and event['kind'] == 'away' and event['feedback'] == 'false_positive':
+                reason = '原判定为离位，已标记为误报。'
+            self.behavior_detail.setText(reason)
         for key,button in self.behavior_buttons.items():
             valid=bool(event and event['kind'] not in {'presence','unknown'})
             if key=='research':valid=bool(event and event['kind']=='phone')

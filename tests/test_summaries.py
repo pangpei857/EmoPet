@@ -95,6 +95,33 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual((first['away_count'],second['away_count']),(1,0))
         self.assertEqual((first['visual']['away'],second['visual']['away']),(10,10))
 
+    def test_workstation_timeline_matches_summary_and_corrections(self):
+        self.elapsed(40)
+        events = [('presence', 0, 20), ('away', 20, 3), ('unknown', 23, 2),
+                  ('phone', 4, 5), ('away', 30, 0)]
+        for kind, offset, seconds in events:
+            begin = self.session.started_at + timedelta(seconds=offset)
+            self.h.upsert_behavior(self.session.round_id, self.event(kind, seconds, f'{kind}-{offset}', begin))
+
+        service = SummaryService(self.store, client=FakeClient())
+        panel = HistoryPanel(self.h, summary_service=service)
+        self.addCleanup(panel.deleteLater)
+        panel.refresh_data()
+        self.assertEqual(panel.behavior_table.rowCount(), 4)
+        panel.behavior_filter.setCurrentIndex(panel.behavior_filter.findData('workstation'))
+        self.assertEqual([panel.behavior_table.item(i, 2).text() for i in range(3)],
+                         ['在位', '离位', '无法判断'])
+        self.assertTrue(panel.behavior_table.item(1, 0).text().endswith('10:00:20'))
+        self.assertTrue(panel.behavior_table.item(1, 1).text().endswith('10:00:23'))
+        self.assertIn('离位片段 1 次，0分3秒', panel.summary_text.toPlainText())
+        self.assertIn('未观测：0分15秒', panel.summary_text.toPlainText())
+
+        panel.behavior_table.selectRow(1)
+        panel.correct_selected_behavior('false_positive')
+        self.assertEqual(panel.behavior_table.item(1, 2).text(), '无法判断')
+        self.assertIn('离位片段 0 次，0分0秒', panel.summary_text.toPlainText())
+        self.assertIn('画面无法判断：0分5秒', panel.summary_text.toPlainText())
+
     def test_chat_association_is_per_turn_and_snapshot_is_frozen(self):
         context={'task':'原任务','state':'进行中','raw_image':'must-not-store'}
         first=self.chats.start_turn(self.conversation,'问题一','chat','test',self.session.round_id,context)

@@ -37,17 +37,19 @@ def build_facts(history,chats,scope,target):
         turns=chats.related_turns(start=start,end=end);reminders=history.reminders(target,target)
     else:raise ValueError('Unknown summary scope')
     visual={'presence':0.,'away':0.,'unknown':0.};behaviors={}
-    source_events=[]
+    source_events=[];away_count=0
     for event in events:
         amount=clipped_duration(event,start,end)
         if amount<=0:continue
         source_events.append(event['id']);kind=event['kind']
+        starts_here=not start or start<=event['started_at']<end
         if kind in visual:
             # A corrected absence is unknown, never silently converted to presence.
-            visual['unknown' if event['feedback']=='false_positive' else kind]+=amount
+            status='unknown' if event['feedback']=='false_positive' else kind
+            visual[status]+=amount
+            away_count+=int(status=='away' and starts_here)
         else:
             item=behaviors.setdefault(kind,{'count':0,'seconds':0.,'corrected':0,'research':0,'event_ids':[]})
-            starts_here=not start or start<=event['started_at']<end
             if event['feedback']=='false_positive':item['corrected']+=int(starts_here);continue
             item['count']+=int(starts_here);item['seconds']+=amount;item['event_ids'].append(event['id'])
             if event['feedback']=='research':item['research']+=int(starts_here)
@@ -60,8 +62,6 @@ def build_facts(history,chats,scope,target):
     visual.update(known_seconds=round(known,3),unobserved_seconds=round(max(0.,seconds-sum(visual.values())),3))
     visual['coverage_percent']=round(known/seconds*100,1) if seconds else 0.
     for value in behaviors.values():value['seconds']=round(min(seconds,value['seconds']),3)
-    away_events=[e for e in events if e['kind']=='away' and e['feedback']!='false_positive'
-        and (not start or start<=e['started_at']<end)]
     # Store bounded text and provenance; pending/stopped answers are never evidence of learning.
     chat_sources=[{'id':t['id'],'question':t['user_text'][:2000],
         'answer':t['answer'][:4000] if t['status']=='complete' else '', 'status':t['status'],
@@ -73,7 +73,7 @@ def build_facts(history,chats,scope,target):
     return {'version':SUMMARY_VERSION,'scope':scope,'target':target,
         'tasks':[{'id':s['id'],'task':s['task'],'status':s['status']} for s in sessions],
         'study_seconds':round(seconds,3),'completed_rounds':completed,'visual':visual,
-        'away_count':len(away_events),'behaviors':behaviors,'chats':chat_sources,'notes':notes,
+        'away_count':away_count,'behaviors':behaviors,'chats':chat_sources,'notes':notes,
         'reminder_count':reminder_totals['count'],'correction_count':reminder_totals['corrected'],
         'source_behavior_ids':source_events,'source_turn_ids':[t['id'] for t in turns],
         'source_reminder_ids':[r['id'] for r in reminders if r['source']!='example']}
